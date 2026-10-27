@@ -143,6 +143,13 @@ function house(b, r, x, z, w, d, floors, opts = {}) {
   return h;
 }
 
+// flower beds, a side hedge and a letterbox for houses with a garden
+function garden(b, r) {
+  for (let k = 0; k < 4; k++) if (r() < 0.75) b.box(-0.42 + k * 0.08, 0.02, 0.3 + r() * 0.06, 0.05, 0.035, 0.05, pick(r, [0xe4553b, 0xf0cf60, 0xe39ab8, 0xffffff, 0x8a5fbf]));
+  if (r() < 0.55) b.box(r() < 0.5 ? -0.46 : 0.46, 0.02, -0.05, 0.05, 0.09, 0.8, 0x5f8f45);
+  b.box(0.22, 0.02, 0.44, 0.015, 0.09, 0.015, 0x6b4a33).box(0.22, 0.11, 0.44, 0.045, 0.035, 0.03, pick(r, [0x3f6fb5, 0xd8342a, 0x4f9a5a]));
+}
+
 export function resBuilding(b, lv, r) {
   if (lv === 1) {
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
@@ -150,6 +157,7 @@ export function resBuilding(b, lv, r) {
     house(b, r, (r() - 0.5) * 0.08, -0.06, 0.62 + r() * 0.14, 0.52 + r() * 0.1, 1 + (r() < 0.25 ? 1 : 0), { turn: r() < 0.3 });
     if (r() < 0.6) b.tree(r() < 0.5 ? -0.4 : 0.4, -0.38, 0.7 + r() * 0.3);
     b.box(-0.3, 0, 0.47, 0.36, 0.06, 0.03, 0xf4efe4).box(0.3, 0, 0.47, 0.36, 0.06, 0.03, 0xf4efe4);
+    garden(b, r);
   } else if (lv === 2) {
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
     b.box(0, 0.005, 0.38, 0.14, 0.02, 0.24, PATH);
@@ -160,6 +168,7 @@ export function resBuilding(b, lv, r) {
       b.add(GEO.cyl, 0xe9d3a6, tx, 0, tz, 0.2, 0.68, 0.2).add(GEO.cone, 0xb5483b, tx, 0.68, tz, 0.26, 0.3, 0.26);
     }
     if (r() < 0.6) b.tree(-0.38, -0.36, 0.9);
+    garden(b, r);
   } else if (r() < 0.35) { // row of town houses
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
     for (let k = -1; k <= 1; k++) house(b, r, k * 0.3, 0, 0.28, 0.6, 3, { turn: true });
