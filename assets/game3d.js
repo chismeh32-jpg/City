@@ -35,6 +35,7 @@ const SERVICES = {
   fire: { label: 'Bomberos', icon: '🚒', cost: 3000, upkeep: 650, radius: 9, fund: 'fire' },
   health: { label: 'Centro de salud', icon: '🏥', cost: 5000, upkeep: 900, radius: 9, fund: 'health' },
   school: { label: 'Escuela', icon: '🏫', cost: 4000, upkeep: 800, radius: 9, fund: 'school' },
+  bus: { label: 'Estación de autobuses', icon: '🚌', cost: 6000, upkeep: 700, radius: 12, fund: 'transport' },
   cityhall: { label: 'Ayuntamiento', icon: '🏛️', cost: 8000, upkeep: 500, fund: 'admin', unique: true },
   park: { label: 'Parque', icon: '⛲', cost: 400, upkeep: 60, radius: 5, fund: 'park', noPower: true },
   plaza: { label: 'Plaza mayor', icon: '🎪', cost: 1500, upkeep: 120, radius: 6, fund: 'leisure', leisure: true, tourism: 150, noPower: true },
@@ -50,7 +51,7 @@ const SERVICES = {
 const FUNDS = [
   ['police', 'Policía', '🛡️', '#3f6fb5'], ['fire', 'Bomberos', '🚒', '#d24a3a'], ['health', 'Salud', '➕', '#3a9a6a'],
   ['school', 'Educación', '🎓', '#d99a2b'], ['park', 'Parques', '🌳', '#4f9a4f'], ['leisure', 'Ocio y cultura', '🎡', '#b06bd0'],
-  ['utilities', 'Energía, agua y limpieza', '⚡', '#b08a4a'], ['roads', 'Calles', '🛣️', '#555'], ['admin', 'Administración', '🏛️', '#8a6f52'],
+  ['utilities', 'Energía, agua y limpieza', '⚡', '#b08a4a'], ['roads', 'Calles', '🛣️', '#555'], ['transport', 'Transporte público', '🚌', '#e0a83a'], ['admin', 'Administración', '🏛️', '#8a6f52'],
 ];
 
 const PARTIES = {
@@ -88,7 +89,7 @@ const CATEGORIES = [
   { id: 'roads', label: 'Calles', icon: '🛣️', tools: [{ id: 'road', label: 'Calle', icon: '🛣️', mode: 'line', cost: 25, hint: 'Arrastra para trazar. Sobre el río se hace un puente (100 €).' }] },
   { id: 'util', label: 'Energía y agua', icon: '⚡', tools: ['power', 'coal', 'solar', 'wind', 'water'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
   { id: 'zones', label: 'Zonas', icon: '▦', tools: Object.keys(ZONES).map((z) => ({ id: z, zone: z, mode: 'rect', cost: 10, hint: 'Arrastra para marcar. Los edificios crecen solos si hay calle, luz y agua.' })) },
-  { id: 'services', label: 'Servicios', icon: '🏛️', tools: ['police', 'fire', 'health', 'school', 'cityhall'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
+  { id: 'services', label: 'Servicios', icon: '🏛️', tools: ['police', 'fire', 'health', 'school', 'bus', 'cityhall'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
   { id: 'leisure', label: 'Ocio', icon: '🎡', tools: [...['park', 'plaza', 'zoo', 'stadium', 'museum'].map((s) => ({ id: s, svc: s, mode: 'one' })), { id: 'trees', label: 'Árboles', icon: '🌲', mode: 'rect', cost: 15, hint: 'Planta árboles en terreno libre.' }] },
   { id: 'demolish', label: 'Demoler', icon: '🧨', tools: [{ id: 'bulldoze', label: 'Demoler', icon: '🧨', mode: 'rect', cost: 10, hint: 'Arrastra para despejar. 10 € por casilla.' }] },
 ];
@@ -234,6 +235,17 @@ const riverMesh = riverStrip(RIVER_W + 0.1, 0.02, 0x5c9fd4, 0.25);
 /* ---------------------------------------------------------------- roads */
 const isRoad = (x, z) => inside(x, z) && S.tiles[I(x, z)].t === 'road';
 
+// bus stops: straight road tiles picked deterministically, only once there is a bus station.
+// Returns the pavement side (index into DIRS) where the shelter stands, or -1.
+let busNetwork = false;
+function busStopSide(x, z) {
+  if (!busNetwork || hash(I(x, z), 7) >= 0.1 || WATER[I(x, z)]) return -1;
+  const conn = DIRS.map(([dx, dz]) => isRoad(x + dx, z + dz));
+  if (conn.filter(Boolean).length !== 2 || conn[0] !== conn[2]) return -1;
+  return conn[0] ? 1 : 0;
+}
+const isBusStop = (x, z) => busStopSide(x, z) >= 0;
+
 function roadBuilder(x, z) {
   const b = new Builder(), conn = DIRS.map(([dx, dz]) => isRoad(x + dx, z + dz)), deg = conn.filter(Boolean).length;
   const bridge = WATER[I(x, z)] === 1, y = bridge ? 0.1 : 0;
@@ -266,7 +278,12 @@ function roadBuilder(x, z) {
       for (const t of [0.1, 0.36]) b.box(dx * t, ty, dz * t, dx ? 0.14 : 0.03, 0.004, dz ? 0.14 : 0.03, 0xf0cf60);
     });
   }
-  if (!bridge && (x * 7 + z * 3) % 4 === 0) {
+  const stop = busStopSide(x, z);
+  if (stop >= 0) {
+    const [dx, dz] = DIRS[stop], px = dx * 0.43, pz = dz * 0.43, w = dx ? 0.08 : 0.3, d = dx ? 0.3 : 0.08;
+    b.box(px, 0.045, pz, w, 0.18, d, 0x9fc6db).box(px, 0.225, pz, w + 0.03, 0.02, d + 0.03, 0x3f6fb5);
+    b.box(px + (dx ? 0 : 0.17), 0.045, pz + (dz ? 0 : 0.17), 0.02, 0.26, 0.02, 0x3b3f46).box(px + (dx ? 0 : 0.17), 0.3, pz + (dz ? 0 : 0.17), 0.06, 0.06, 0.01, 0xe0a83a);
+  } else if (!bridge && (x * 7 + z * 3) % 4 === 0) {
     const k = conn.findIndex((c) => !c);
     if (k >= 0) {
       const [dx, dz] = DIRS[k], px = dx ? dx * 0.45 : 0.4, pz = dz ? dz * 0.45 : 0.4;
@@ -507,7 +524,9 @@ function compute() {
     for (const [hx, hz, p] of homes) if (list.some(([sx, sz, r]) => Math.hypot(sx - hx, sz - hz) <= r)) c += p;
     return d.pop ? c / d.pop : 0;
   };
-  for (const k of ['police', 'fire', 'health', 'school', 'park']) d.cov[k] = covered([k]);
+  for (const k of ['police', 'fire', 'health', 'school', 'park', 'bus']) d.cov[k] = covered([k]);
+  const hasBus = !!d.svc.bus;
+  if (hasBus !== busNetwork) { busNetwork = hasBus; for (let c = 0; c < chunks.length; c++) dirtyChunks.add(c); }
   d.cov.leisure = covered(Object.keys(SERVICES).filter((k) => SERVICES[k].leisure));
   let smoky = 0;
   for (const [hx, hz, p] of homes) {
@@ -563,6 +582,7 @@ function approvalRows(d) {
   const svc = [['health', '➕', 'El médico está cerca'], ['school', '🎓', 'Buenas escuelas en el barrio'],
     ['police', '🛡️', 'Con la policía cerca se duerme tranquilo'], ['fire', '🚒', 'Los bomberos llegan a tiempo'], ['park', '🌳', 'Hay parques donde pasear']];
   for (const [k, ic, label] of svc) rows.push([ic, label, 5 * d.cov[k] * Math.min(1, fundQ(k)) * care]);
+  if (d.cov.bus > 0) rows.push(['🚌', 'Hay autobús para ir al trabajo', 3 * d.cov.bus * Math.min(1, fundQ('transport')) * (law('transporte') ? 1.3 : 1)]);
   if (d.cov.leisure > 0) rows.push(['🎡', 'Ocio y cultura cerca de casa', 4 * d.cov.leisure * Math.min(1, fundQ('leisure'))]);
   const ratio = d.workers ? d.jobsTotal / d.workers : 1;
   rows.push(ratio >= 1 ? ['💼', 'Hay trabajo para todos', 3] : ['💼', 'Falta trabajo', -Math.round((1 - ratio) * 10)]);
@@ -1203,57 +1223,215 @@ function newCity(skipConfirm = false) {
   S = newState();
   setStyle(S.style);
   $('styleSel').value = S.style;
-  rebuildAll(); cars.forEach((c) => scene.remove(c.mesh)); cars.length = 0; walkers.length = 0;
+  rebuildAll(); agents.length = 0; walkers.length = 0;
   D = compute(); setSpeed(1); renderAdvisor(); updateHud(); save();
   news('Una nueva ciudad empieza hoy. ¡Suerte, alcaldía!');
   openModal('partyModal');
 }
 $('newCity').onclick = () => newCity();
 
-/* ---------------------------------------------------------------- living details: cars, smoke, rain */
-const cars = [];
-const CAR_COLOURS = [0xd8342a, 0x2f5fb5, 0xf2efe6, 0x3b3f46, 0xe0a83a, 0x4f9a5a, 0x8a5fbf];
-function makeCar() {
-  const b = new Builder(), c = pick(Math.random, CAR_COLOURS);
-  b.box(0, 0.03, 0, 0.07, 0.05, 0.13, c).box(0, 0.08, -0.01, 0.065, 0.04, 0.07, 0xc9d6e0);
-  return b.build(true);
+/* ---------------------------------------------------------------- living details */
+/* ---------------------------------------------------------------- traffic: cars, buses, vans, trucks, emergency vehicles */
+// One InstancedMesh per vehicle shape (body tinted per instance) plus one for its headlights.
+function vehicleType(cap, build) {
+  const b = new Builder();
+  build(b);
+  const g = b.build(true), [body, lights] = g.children;
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, flatShading: true });
+  const mesh = new THREE.InstancedMesh(body.geometry, mat, cap);
+  const glow = new THREE.InstancedMesh(lights.geometry, glowMat, cap);
+  for (const m of [mesh, glow]) { m.count = 0; m.castShadow = m === mesh; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; scene.add(m); }
+  return { mesh, glow, list: [] };
 }
+const WHITE = 0xffffff, GLASS = 0x2e3a48, TYRE = 0x222222, LAMP = 0xfff2c4;
+const VEH = {
+  car: vehicleType(220, (b) => {
+    b.box(0, 0.018, 0, 0.075, 0.042, 0.14, WHITE).box(0, 0.06, -0.012, 0.066, 0.036, 0.075, GLASS);
+    for (const [x, z] of [[-0.036, 0.045], [0.036, 0.045], [-0.036, -0.045], [0.036, -0.045]]) b.box(x, 0, z, 0.012, 0.026, 0.026, TYRE);
+    b.box(-0.025, 0.03, 0.071, 0.016, 0.012, 0.004, LAMP, 1).box(0.025, 0.03, 0.071, 0.016, 0.012, 0.004, LAMP, 1);
+  }),
+  van: vehicleType(50, (b) => {
+    b.box(0, 0.02, -0.03, 0.082, 0.1, 0.15, WHITE).box(0, 0.02, 0.07, 0.08, 0.07, 0.06, WHITE).box(0, 0.06, 0.1, 0.07, 0.03, 0.004, GLASS);
+    b.box(-0.026, 0.035, 0.101, 0.016, 0.012, 0.004, LAMP, 1).box(0.026, 0.035, 0.101, 0.016, 0.012, 0.004, LAMP, 1);
+  }),
+  truck: vehicleType(30, (b) => {
+    b.box(0, 0.02, -0.035, 0.09, 0.11, 0.2, WHITE).box(0, 0.02, 0.1, 0.088, 0.09, 0.07, WHITE).box(0, 0.075, 0.136, 0.078, 0.03, 0.004, GLASS);
+    b.box(0, 0.13, -0.035, 0.03, 0.012, 0.19, 0xd8d2c4);
+    b.box(-0.03, 0.04, 0.137, 0.016, 0.012, 0.004, LAMP, 1).box(0.03, 0.04, 0.137, 0.016, 0.012, 0.004, LAMP, 1);
+  }),
+  bus: vehicleType(30, (b) => {
+    b.box(0, 0.02, 0, 0.088, 0.105, 0.34, WHITE).box(0, 0.07, 0, 0.09, 0.035, 0.32, GLASS).box(0, 0.07, 0.17, 0.08, 0.035, 0.004, GLASS);
+    b.box(0, 0.125, 0, 0.07, 0.01, 0.2, 0xe8e4dc);
+    b.box(-0.03, 0.04, 0.171, 0.018, 0.012, 0.004, LAMP, 1).box(0.03, 0.04, 0.171, 0.018, 0.012, 0.004, LAMP, 1);
+  }),
+};
+const VEH_SCALE = 1.8; // vehicles are modelled small; this brings them to the scale of the houses
+const sirens = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.016, 0.02), new THREE.MeshBasicMaterial(), 40);
+sirens.count = 0; sirens.frustumCulled = false; scene.add(sirens);
+const CAR_COLOURS = [0xd8342a, 0x2f5fb5, 0xf2efe6, 0x3b3f46, 0xe0a83a, 0x4f9a5a, 0x8a5fbf, 0x9aa0a6, 0xf2efe6, 0x2b2b2b];
+const SIREN_RED = new THREE.Color(0xff3b30), SIREN_BLUE = new THREE.Color(0x3d7bff), SIREN_OFF = new THREE.Color(0x555555);
+// role -> vehicle shape, colour, speed, siren roof height
+const ROLES = {
+  car: { type: 'car', speed: 1.1 }, taxi: { type: 'car', colour: 0xf0c419, speed: 1.15 },
+  delivery: { type: 'van', speed: 0.9 }, garbage: { type: 'truck', colour: 0x4f9a5a, speed: 0.55 },
+  bus: { type: 'bus', speed: 0.75 }, police: { type: 'car', colour: 0x2f4f8f, speed: 1.3, siren: 0.1 },
+  ambulance: { type: 'van', colour: 0xf4f4f4, speed: 1.3, siren: 0.13 }, fire: { type: 'truck', colour: 0xd8342a, speed: 1.2, siren: 0.15 },
+};
+
 function roadNeighbours(i) {
   const x = i % N, z = (i / N) | 0;
   return DIRS.map(([dx, dz]) => [x + dx, z + dz]).filter(([a, b]) => isRoad(a, b)).map(([a, b]) => I(a, b));
 }
-function updateCars(dt) {
-  if (!D) return;
-  const target = D.pop ? Math.round(Math.min(45, Math.floor(D.roads / 5) + Math.floor(D.pop / 80)) * (law('transporte') ? 0.6 : 1)) : 0;
-  if (cars.length < target) {
-    const roads = S.tiles.map((T, i) => (T.t === 'road' ? i : -1)).filter((i) => i >= 0 && roadNeighbours(i).length);
-    if (roads.length) {
-      const from = pick(Math.random, roads), to = pick(Math.random, roadNeighbours(from)), mesh = makeCar();
-      scene.add(mesh);
-      cars.push({ mesh, from, to, t: Math.random(), prev: -1, v: 0.9 + Math.random() * 0.5 });
-    }
-  } else if (cars.length > target) scene.remove(cars.pop().mesh);
-  const k = S.speed ? Math.min(3, S.speed) : 0;
-  for (const c of cars) {
-    if (S.tiles[c.from].t !== 'road' || S.tiles[c.to].t !== 'road') { c.t = 2; c.dead = true; }
-    c.t += dt * c.v * k;
-    if (c.t >= 1) {
-      const opts = roadNeighbours(c.to).filter((n) => n !== c.from);
-      const next = opts.length ? pick(Math.random, opts) : c.from;
-      if (c.dead || S.tiles[c.to].t !== 'road') { c.mesh.visible = false; continue; }
-      c.from = c.to; c.to = next; c.t = 0;
-    }
-    const fx = W(c.from % N), fz = W((c.from / N) | 0), tx = W(c.to % N), tz = W((c.to / N) | 0);
-    const dx = tx - fx, dz = tz - fz, len = Math.hypot(dx, dz) || 1, ox = -dz / len * 0.17, oz = dx / len * 0.17;
-    const bridgeY = WATER[c.from] || WATER[c.to] ? 0.1 : 0;
-    c.mesh.position.set(fx + dx * c.t + ox, 0.02 + bridgeY, fz + dz * c.t + oz);
-    c.mesh.rotation.y = Math.atan2(dx, dz);
+const isJunction = (i) => roadNeighbours(i).length >= 3;
+
+const agents = [];
+let roadCache = null, roadCacheKey = -1, trafficClock = 0;
+function roadTiles() {
+  if (roadCacheKey !== D.roads) {
+    roadCache = S.tiles.map((T, i) => (T.t === 'road' && roadNeighbours(i).length ? i : -1)).filter((i) => i >= 0);
+    roadCacheKey = D.roads;
   }
-  for (let n = cars.length - 1; n >= 0; n--) if (!cars[n].mesh.visible) { scene.remove(cars[n].mesh); cars.splice(n, 1); }
+  return roadCache;
+}
+function nearestRoad(x, z) {
+  for (let r = 1; r <= 3; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++)
+    if (isRoad(x + dx, z + dz) && roadNeighbours(I(x + dx, z + dz)).length) return I(x + dx, z + dz);
+  return -1;
+}
+function spawn(role, at = -1) {
+  const roads = roadTiles();
+  if (!roads.length) return;
+  const from = at >= 0 ? at : pick(Math.random, roads), opts = roadNeighbours(from);
+  if (!opts.length) return;
+  const R = ROLES[role];
+  agents.push({ role, from, to: pick(Math.random, opts), t: Math.random() * 0.5, v: R.speed * (0.85 + Math.random() * 0.3), wait: 0,
+    colour: new THREE.Color(R.colour ?? (role === 'bus' ? pick(Math.random, [0xd8342a, 0xe0a83a, 0x3f9a5a]) : role === 'delivery' ? pick(Math.random, [0xf2efe6, 0xe0a83a, 0x3f6fb5]) : pick(Math.random, CAR_COLOURS))),
+    alarm: Math.random() < 0.35 });
+}
+function wanted(d) {
+  const h = S.minutes / 60, rush = (h >= 7 && h < 9.5) || (h >= 17 && h < 19.5);
+  const dayF = rush ? 1 : h >= 6 && h < 22 ? 0.7 : 0.25;
+  const depots = d.svc.bus || 0;
+  const cars = d.pop ? Math.min(200, Math.round((d.roads / 3 + d.pop / 18) * dayF * (law('transporte') ? 0.6 : 1) * (depots ? 0.85 : 1))) : 0;
+  return {
+    car: Math.round(cars * 0.9), taxi: Math.round(cars * 0.1),
+    delivery: !d.pop ? 0 : h >= 6 && h < 21 ? Math.min(45, Math.round((d.jobs.com + d.jobs.ind) / 35)) : 2,
+    garbage: d.pop > 60 && h >= 5 && h < 11 ? Math.min(6, Math.ceil(d.pop / 500)) : 0,
+    bus: Math.min(30, depots * 3 * (law('transporte') ? 2 : 1) * (h >= 1 && h < 5 ? 0.5 : 1)),
+    police: (d.svc.police || 0) * 2, ambulance: d.svc.health || 0, fire: d.svc.fire || 0,
+  };
+}
+function stationOf(role) {
+  const kind = { police: 'police', ambulance: 'health', fire: 'fire', bus: 'bus', garbage: 'water' }[role];
+  if (!kind) return -1;
+  const list = D.svcList.filter(([s]) => s === kind);
+  if (!list.length) return -1;
+  const [, x, z] = pick(Math.random, list);
+  return nearestRoad(x, z);
+}
+function updateTraffic(dt) {
+  if (!D) return;
+  const want = wanted(D), have = {};
+  for (const a of agents) have[a.role] = (have[a.role] || 0) + 1;
+  for (const role of Object.keys(ROLES)) {
+    const n = have[role] || 0, w = Math.floor(want[role]);
+    if (n < w) for (let k = n; k < Math.min(w, n + 6); k++) spawn(role, stationOf(role));
+    else if (n > w) agents.splice(agents.findIndex((a) => a.role === role), 1);
+  }
+  const k = S.speed ? Math.min(3, S.speed) : 0;
+  trafficClock += dt * k;
+  const greenX = Math.floor(trafficClock / 4) % 2 === 0;
+  for (const T of Object.values(VEH)) T.list.length = 0;
+  let sirenN = 0;
+  for (let n = agents.length - 1; n >= 0; n--) {
+    const a = agents[n], R = ROLES[a.role];
+    if (S.tiles[a.from].t !== 'road' || S.tiles[a.to].t !== 'road') { agents.splice(n, 1); continue; }
+    const dx = (a.to % N) - (a.from % N), dz = ((a.to / N) | 0) - ((a.from / N) | 0);
+    let step = dt * a.v * k;
+    if (a.wait > 0) { a.wait -= dt * k; step = 0; }
+    // stop at red lights before junctions (emergency vehicles on call ignore them)
+    const red = isJunction(a.to) && (dx !== 0) !== greenX && !(R.siren && a.alarm);
+    if (red && a.t < 0.55 && a.t + step >= 0.55) { a.t = 0.55; step = 0; }
+    else if (red && a.t === 0.55) step = 0;
+    a.t += step;
+    if (a.t >= 1) {
+      if (a.role === 'bus' && isBusStop(a.to % N, (a.to / N) | 0)) a.wait = 2.5;
+      if (R.siren && Math.random() < 0.04) a.alarm = !a.alarm;
+      const opts = roadNeighbours(a.to).filter((o) => o !== a.from);
+      a.from = a.to; a.to = opts.length ? pick(Math.random, opts) : a.from; a.t = 0;
+      if (a.to === a.from) { const back = roadNeighbours(a.from); if (back.length) a.to = back[0]; }
+    }
+    const fx = W(a.from % N), fz = W((a.from / N) | 0), tx = W(a.to % N), tz = W((a.to / N) | 0);
+    const ddx = tx - fx, ddz = tz - fz, len = Math.hypot(ddx, ddz) || 1;
+    const y = (WATER[a.from] || WATER[a.to] ? 0.1 : 0) + 0.025;
+    _v.set(fx + ddx * a.t - (ddz / len) * 0.2, y, fz + ddz * a.t + (ddx / len) * 0.2);
+    _m.compose(_v, _q.setFromEuler(_e.set(0, Math.atan2(ddx, ddz), 0)), _s.set(VEH_SCALE, VEH_SCALE, VEH_SCALE));
+    const T = VEH[R.type], idx = T.list.length;
+    T.list.push(a);
+    T.mesh.setMatrixAt(idx, _m); T.glow.setMatrixAt(idx, _m); T.mesh.setColorAt(idx, a.colour);
+    if (R.siren && sirenN < 40) {
+      const m2 = _m.clone().multiply(new THREE.Matrix4().makeTranslation(0, R.siren, 0));
+      sirens.setMatrixAt(sirenN, m2);
+      const flash = Math.floor(performance.now() / 180 + n) % 2;
+      sirens.setColorAt(sirenN, a.alarm ? (flash ? SIREN_RED : SIREN_BLUE) : SIREN_OFF);
+      sirenN++;
+    }
+  }
+  for (const T of Object.values(VEH)) {
+    T.mesh.count = T.glow.count = T.list.length;
+    T.mesh.instanceMatrix.needsUpdate = T.glow.instanceMatrix.needsUpdate = true;
+    if (T.mesh.instanceColor) T.mesh.instanceColor.needsUpdate = true;
+  }
+  sirens.count = sirenN;
+  sirens.instanceMatrix.needsUpdate = true;
+  if (sirens.instanceColor) sirens.instanceColor.needsUpdate = true;
+}
+
+/* boats on the river and birds in the sky */
+const boats = [];
+for (let k = 0; k < 5; k++) {
+  const b = new Builder(), sail = k % 2 === 0;
+  b.box(0, -0.02, 0, 0.12, 0.05, 0.3, pick(Math.random, [0xf2efe6, 0xd8342a, 0x3f6fb5])).box(0, 0.03, -0.03, 0.1, 0.012, 0.22, 0xb9864f);
+  if (sail) b.box(0, 0.04, 0, 0.01, 0.34, 0.01, 0x7a5638).add(GEO.gable, 0xf8f6f0, 0, 0.08, 0.02, 0.004, 0.28, 0.16, Math.PI / 2);
+  else b.box(0, 0.04, -0.04, 0.08, 0.07, 0.1, 0xf2efe6).box(0, 0.07, 0.01, 0.082, 0.025, 0.04, GLASS);
+  const g = b.build(true);
+  scene.add(g);
+  boats.push({ g, x: -30 + k * 22, dir: k % 2 ? 1 : -1, v: 0.6 + Math.random() * 0.5, lane: (k % 2 ? 1 : -1) * 0.45 });
+}
+function updateBoats(dt) {
+  const k = S.speed ? Math.min(3, S.speed) : 0.3;
+  for (const b of boats) {
+    b.x += dt * b.v * b.dir * k;
+    if (b.x > N + 40 || b.x < -40) b.dir *= -1;
+    const z = riverZ(b.x), dz = riverZ(b.x + 0.1) - z;
+    b.g.position.set(b.x - HALF, 0.02 + Math.sin(performance.now() / 600 + b.x) * 0.006, z - HALF + b.lane);
+    b.g.rotation.y = Math.atan2(0.1 * b.dir, dz * b.dir);
+  }
+}
+const BIRDS = 27;
+const birds = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.008, 0.05), new THREE.MeshStandardMaterial({ color: 0x3b3f46 }), BIRDS);
+birds.frustumCulled = false;
+scene.add(birds);
+const flocks = [0, 1, 2].map((f) => ({ cx: (f - 1) * 14, cz: (f - 1) * 8, r: 10 + f * 4, a: f * 2, y: 5 + f * 1.5, v: 0.08 + f * 0.02 }));
+function updateBirds(dt) {
+  const tNow = performance.now() / 1000;
+  flocks.forEach((f, fi) => {
+    f.a += dt * f.v;
+    const x = f.cx + Math.cos(f.a) * f.r, z = f.cz + Math.sin(f.a) * f.r, heading = -f.a;
+    for (let k = 0; k < 9; k++) {
+      const row = Math.ceil(k / 2), side = k % 2 ? 1 : -1;
+      const ox = k ? side * row * 0.35 : 0, oz = -row * 0.35;
+      const c = Math.cos(heading), s = Math.sin(heading);
+      const flap = 0.55 + Math.abs(Math.sin(tNow * 9 + k + fi)) * 0.45;
+      _m.compose(_v.set(x + ox * c - oz * s, f.y + Math.sin(tNow + k) * 0.08, z + ox * s + oz * c), _q.setFromEuler(_e.set(0, heading, 0)), _s.set(flap, 1, 1));
+      birds.setMatrixAt(fi * 9 + k, _m);
+    }
+  });
+  birds.instanceMatrix.needsUpdate = true;
 }
 
 // pedestrians walk along the pavements of the road network
-const PEOPLE = 120, SKIN = [0xf1c9a5, 0xd9a47a, 0x9a6a4a, 0x6b4a33], CLOTHES = [0xd8342a, 0x2f5fb5, 0x4f9a5a, 0xe0a83a, 0x8a5fbf, 0x3b3f46, 0xf2efe6];
+const PEOPLE = 240, SKIN = [0xf1c9a5, 0xd9a47a, 0x9a6a4a, 0x6b4a33], CLOTHES = [0xd8342a, 0x2f5fb5, 0x4f9a5a, 0xe0a83a, 0x8a5fbf, 0x3b3f46, 0xf2efe6];
 const peopleMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.022, 0.05, 2, 6).translate(0, 0.047, 0),
   new THREE.MeshStandardMaterial({ roughness: 0.8 }), PEOPLE);
 const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 6, 4).translate(0, 0.105, 0), new THREE.MeshStandardMaterial({ roughness: 0.8 }), PEOPLE);
@@ -1261,7 +1439,7 @@ for (const m of [peopleMesh, headMesh]) { m.castShadow = true; m.count = 0; m.in
 const walkers = [];
 function updatePeople(dt) {
   if (!D) return;
-  const target = D.pop ? Math.min(PEOPLE, Math.floor(D.pop / 8) + 4) : 0;
+  const h = S.minutes / 60, target = D.pop ? Math.min(PEOPLE, Math.floor((D.pop / 5) * (h >= 7 && h < 22 ? 1 : 0.3)) + 4) : 0;
   if (walkers.length < target) {
     const roads = S.tiles.map((T, i) => (T.t === 'road' && !WATER[i] ? i : -1)).filter((i) => i >= 0 && roadNeighbours(i).length);
     if (roads.length) {
@@ -1283,7 +1461,7 @@ function updatePeople(dt) {
     const fx = W(w.from % N), fz = W((w.from / N) | 0), tx = W(w.to % N), tz = W((w.to / N) | 0);
     const dx = tx - fx, dz = tz - fz, len = Math.hypot(dx, dz) || 1, off = 0.43 * w.side;
     const bob = Math.abs(Math.sin((w.phase += dt * 9 * k))) * 0.01;
-    _m.compose(_v.set(fx + dx * w.t - (dz / len) * off, 0.045 + bob, fz + dz * w.t + (dx / len) * off), _q.setFromEuler(_e.set(0, Math.atan2(dx, dz), 0)), _s.set(1, 1, 1));
+    _m.compose(_v.set(fx + dx * w.t - (dz / len) * off, 0.045 + bob, fz + dz * w.t + (dx / len) * off), _q.setFromEuler(_e.set(0, Math.atan2(dx, dz), 0)), _s.set(1.3, 1.3, 1.3));
     peopleMesh.setMatrixAt(n, _m); headMesh.setMatrixAt(n, _m);
   });
   peopleMesh.count = headMesh.count = walkers.length;
@@ -1391,8 +1569,10 @@ function frame() {
     if (t >= 1) { disposeGroup(g); animating.delete(i); dirtyChunks.add(chunkOf(i)); }
   }
   for (const c of [...dirtyChunks].slice(0, dirtyChunks.size > 6 ? dirtyChunks.size : 3)) { dirtyChunks.delete(c); buildChunk(c); }
-  updateCars(dt);
+  updateTraffic(dt);
   updatePeople(dt);
+  updateBoats(dt);
+  updateBirds(dt);
   for (const h of rotors.values()) h.userData.rotor.rotation.z += dt * (S.speed ? 1.6 + S.speed * 0.4 : 0.4);
   updateSmoke(dt);
   updateRain(dt);
@@ -1432,5 +1612,5 @@ updateHud();
 placeTicker();
 news(D.pop ? `Bienvenido de nuevo a ${S.name}.` : 'Bienvenida, alcaldía. Empieza trazando una calle junto al río.');
 if (!S.party) openModal('partyModal');
-window.__urbania = { renderer, election, LAWS, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
+window.__urbania = { renderer, election, LAWS, agents, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
 frame();
