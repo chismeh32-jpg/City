@@ -1,7 +1,7 @@
 // Urbania — a small low-poly 3D city builder (three.js).
 import * as THREE from 'three';
 import { MapControls } from 'three/addons/controls/MapControls.js';
-import { Builder, GEO, prep, glowMat, rng, pick, STYLES, setStyle, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding } from './buildings.js';
+import { Builder, GEO, prep, glowMat, rng, pick, STYLES, setStyle, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor } from './buildings.js';
 
 /* ---------------------------------------------------------------- config */
 const N = 44;                       // grid size in tiles
@@ -28,29 +28,68 @@ const ZONES = {
   off: { label: 'Oficinas', icon: '🏢', color: '#a58cef', cap: [0, 10, 26, 60], noun: 'empleos' },
   ind: { label: 'Industria', icon: '🏭', color: '#eec05a', cap: [0, 12, 24, 40], noun: 'empleos' },
 };
+// fund: budget line that pays the upkeep · radius: coverage for approval · cap: power/water output
+// smoke: [radius, strength] for polluters · tourism: base income per day · leisure: counts as "ocio"
 const SERVICES = {
-  police: { label: 'Comisaría', icon: '🛡️', cost: 3000, upkeep: 600, radius: 9 },
-  fire: { label: 'Bomberos', icon: '🚒', cost: 3000, upkeep: 650, radius: 9 },
-  health: { label: 'Centro de salud', icon: '🏥', cost: 5000, upkeep: 900, radius: 9 },
-  school: { label: 'Escuela', icon: '🏫', cost: 4000, upkeep: 800, radius: 9 },
-  park: { label: 'Parque', icon: '⛲', cost: 400, upkeep: 60, radius: 5 },
-  power: { label: 'Central eléctrica', icon: '⚡', cost: 6000, upkeep: 500, cap: 140 },
-  water: { label: 'Torre de agua', icon: '💧', cost: 4000, upkeep: 300, cap: 140 },
+  police: { label: 'Comisaría', icon: '🛡️', cost: 3000, upkeep: 600, radius: 9, fund: 'police' },
+  fire: { label: 'Bomberos', icon: '🚒', cost: 3000, upkeep: 650, radius: 9, fund: 'fire' },
+  health: { label: 'Centro de salud', icon: '🏥', cost: 5000, upkeep: 900, radius: 9, fund: 'health' },
+  school: { label: 'Escuela', icon: '🏫', cost: 4000, upkeep: 800, radius: 9, fund: 'school' },
+  cityhall: { label: 'Ayuntamiento', icon: '🏛️', cost: 8000, upkeep: 500, fund: 'admin', unique: true },
+  park: { label: 'Parque', icon: '⛲', cost: 400, upkeep: 60, radius: 5, fund: 'park', noPower: true },
+  plaza: { label: 'Plaza mayor', icon: '🎪', cost: 1500, upkeep: 120, radius: 6, fund: 'leisure', leisure: true, tourism: 150, noPower: true },
+  zoo: { label: 'Zoológico', icon: '🦒', cost: 9000, upkeep: 700, radius: 11, fund: 'leisure', leisure: true, tourism: 1100 },
+  stadium: { label: 'Estadio', icon: '🏟️', cost: 14000, upkeep: 1000, radius: 12, fund: 'leisure', leisure: true, tourism: 1600 },
+  museum: { label: 'Museo', icon: '🖼️', cost: 7000, upkeep: 500, radius: 10, fund: 'leisure', leisure: true, tourism: 700 },
+  power: { label: 'Central de gas', icon: '🔥', cost: 6000, upkeep: 500, cap: 140, fund: 'utilities', smoke: [6, 0.6], plant: 'power' },
+  coal: { label: 'Central de carbón', icon: '🏭', cost: 4500, upkeep: 350, cap: 240, fund: 'utilities', smoke: [9, 1.2], plant: 'power' },
+  solar: { label: 'Parque solar', icon: '☀️', cost: 7000, upkeep: 150, cap: 60, fund: 'utilities', plant: 'power', green: true },
+  wind: { label: 'Aerogenerador', icon: '🌬️', cost: 5500, upkeep: 120, cap: 50, fund: 'utilities', plant: 'power', green: true },
+  water: { label: 'Torre de agua', icon: '💧', cost: 4000, upkeep: 300, cap: 140, fund: 'utilities', plant: 'water' },
 };
 const FUNDS = [
   ['police', 'Policía', '🛡️', '#3f6fb5'], ['fire', 'Bomberos', '🚒', '#d24a3a'], ['health', 'Salud', '➕', '#3a9a6a'],
-  ['school', 'Educación', '🎓', '#d99a2b'], ['park', 'Parques', '🌳', '#4f9a4f'],
-  ['utilities', 'Limpieza y redes', '🗑️', '#b08a4a'], ['roads', 'Calles', '🛣️', '#555'],
+  ['school', 'Educación', '🎓', '#d99a2b'], ['park', 'Parques', '🌳', '#4f9a4f'], ['leisure', 'Ocio y cultura', '🎡', '#b06bd0'],
+  ['utilities', 'Energía, agua y limpieza', '⚡', '#b08a4a'], ['roads', 'Calles', '🛣️', '#555'], ['admin', 'Administración', '🏛️', '#8a6f52'],
 ];
-const FUND_OF = { police: 'police', fire: 'fire', health: 'health', school: 'school', park: 'park', power: 'utilities', water: 'utilities' };
+
+const PARTIES = {
+  izquierda: { label: 'Izquierda', name: 'Partido del Pueblo', icon: '🌹', color: '#d33a2f', lean: -1, taxLimit: 16,
+    pitch: 'Servicios públicos fuertes, vivienda asequible y medio ambiente. Tus vecinos valoran más los servicios y aguantan impuestos de hasta el 16 %, pero las empresas llegan algo más despacio.' },
+  centro: { label: 'Centro', name: 'Unión Vecinal', icon: '🤝', color: '#d99a2b', lean: 0, taxLimit: 14,
+    pitch: 'Ni de unos ni de otros: gestión y sentido común. Ganas aprobación con leyes de consenso y pierdes un poco con las muy ideológicas.' },
+  derecha: { label: 'Derecha', name: 'Partido del Progreso', icon: '🦅', color: '#3f6fb5', lean: 1, taxLimit: 12,
+    pitch: 'Impuestos bajos, empresas y seguridad. Las empresas crecen más rápido, pero tus votantes se enfadan si los impuestos pasan del 12 %.' },
+};
+
+// lean: -1 izquierda · 0 consenso · 1 derecha. cost: € al día mientras la ley está en vigor.
+const LAWS = [
+  { id: 'transporte', icon: '🚌', name: 'Transporte público gratuito', lean: -1, cost: 1200, bonus: 3, effect: '+3 aprobación · 40 % menos coches · 1.200 €/día' },
+  { id: 'sanidad', icon: '🩺', name: 'Sanidad universal', lean: -1, cost: 0, bonus: 2, effect: 'Salud llega un 30 % más lejos · su coste sube un 40 % · +2 aprobación' },
+  { id: 'educacion', icon: '📚', name: 'Educación gratuita', lean: -1, cost: 0, bonus: 2, effect: 'Más viviendas de nivel 3 · coste de educación +30 % · +2 aprobación' },
+  { id: 'alquiler', icon: '🔑', name: 'Alquiler controlado', lean: -1, cost: 0, bonus: 3, effect: 'Más demanda de vivienda · el impuesto de vivienda rinde un 15 % menos · +3 aprobación' },
+  { id: 'verde', icon: '🌱', name: 'Pacto verde', lean: -1, cost: 0, bonus: 1, effect: 'Solar y eólica un 40 % más baratas · prohíbe nuevas centrales de carbón · humo −30 %' },
+  { id: 'empresas', icon: '💼', name: 'Rebaja fiscal a empresas', lean: 1, cost: 0, bonus: 0, effect: 'Comercio, oficinas e industria crecen un 40 % más rápido · rinden un 20 % menos' },
+  { id: 'manodura', icon: '🚓', name: 'Mano dura contra el crimen', lean: 1, cost: 0, bonus: 1, effect: 'La policía llega un 40 % más lejos · su coste sube un 30 %' },
+  { id: 'privatizar', icon: '🏷️', name: 'Privatizar servicios', lean: 1, cost: 0, bonus: 0, effect: 'Todos los servicios cuestan un 25 % menos · llegan un 15 % menos lejos' },
+  { id: 'industria', icon: '🏗️', name: 'Vía libre a la industria', lean: 1, cost: 0, bonus: 0, effect: 'Industria con un 30 % más de empleos · su humo llega más lejos' },
+  { id: 'horarios', icon: '🕘', name: 'Libertad de horarios comerciales', lean: 1, cost: 0, bonus: 0, effect: 'Las tiendas dan un 25 % más de empleo y rinden un 15 % más' },
+  { id: 'turismo', icon: '📸', name: 'Plan de turismo', lean: 0, cost: 600, bonus: 0, effect: 'El turismo deja un 60 % más · 600 €/día' },
+  { id: 'reciclaje', icon: '♻️', name: 'Reciclaje obligatorio', lean: 0, cost: 0, bonus: 1, effect: 'Humo −40 % · energía y limpieza cuestan un 15 % más · +1 aprobación' },
+  { id: 'silencio', icon: '🤫', name: 'Ordenanza del silencio', lean: 0, cost: 0, bonus: 2, effect: 'El comercio crece un 20 % más despacio · +2 aprobación' },
+  { id: 'fiestas', icon: '🎉', name: 'Fiestas patronales', lean: 0, cost: 900, bonus: 3, effect: '+3 aprobación · 900 €/día' },
+];
+const LAW_BY_ID = Object.fromEntries(LAWS.map((l) => [l.id, l]));
+const LAW_FEE = 1000;
+const ELECTION_EVERY = 10;
 
 const CATEGORIES = [
   { id: 'look', label: 'Mirar', icon: '🖐️', tools: [{ id: 'look' }] },
   { id: 'roads', label: 'Calles', icon: '🛣️', tools: [{ id: 'road', label: 'Calle', icon: '🛣️', mode: 'line', cost: 25, hint: 'Arrastra para trazar. Sobre el río se hace un puente (100 €).' }] },
-  { id: 'util', label: 'Luz y agua', icon: '⚡', tools: ['power', 'water'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
+  { id: 'util', label: 'Energía y agua', icon: '⚡', tools: ['power', 'coal', 'solar', 'wind', 'water'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
   { id: 'zones', label: 'Zonas', icon: '▦', tools: Object.keys(ZONES).map((z) => ({ id: z, zone: z, mode: 'rect', cost: 10, hint: 'Arrastra para marcar. Los edificios crecen solos si hay calle, luz y agua.' })) },
-  { id: 'services', label: 'Servicios', icon: '🏛️', tools: ['police', 'fire', 'health', 'school'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
-  { id: 'parks', label: 'Parques', icon: '🌳', tools: [{ id: 'park', svc: 'park', mode: 'one' }, { id: 'trees', label: 'Árboles', icon: '🌲', mode: 'rect', cost: 15, hint: 'Planta árboles en terreno libre.' }] },
+  { id: 'services', label: 'Servicios', icon: '🏛️', tools: ['police', 'fire', 'health', 'school', 'cityhall'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
+  { id: 'leisure', label: 'Ocio', icon: '🎡', tools: [...['park', 'plaza', 'zoo', 'stadium', 'museum'].map((s) => ({ id: s, svc: s, mode: 'one' })), { id: 'trees', label: 'Árboles', icon: '🌲', mode: 'rect', cost: 15, hint: 'Planta árboles en terreno libre.' }] },
   { id: 'demolish', label: 'Demoler', icon: '🧨', tools: [{ id: 'bulldoze', label: 'Demoler', icon: '🧨', mode: 'rect', cost: 10, hint: 'Arrastra para despejar. 10 € por casilla.' }] },
 ];
 for (const c of CATEGORIES) for (const t of c.tools) {
@@ -59,6 +98,7 @@ for (const c of CATEGORIES) for (const t of c.tools) {
 }
 
 const NEIGHBOURS = ['Peñaclara', 'Robledal', 'Villarrío', 'San Fermín del Llano', 'Los Almendros', 'Fuentehonda'];
+const NAMES = ['Lucía', 'Don Miguel', 'Carmen', 'Javi', 'Rosa', 'Andrés', 'Marta', 'Paco', 'Inés', 'Tomás', 'Aitana', 'Doña Pilar', 'Rubén', 'Nerea', 'Óscar', 'Elena'];
 
 /* ---------------------------------------------------------------- terrain */
 const riverZ = (x) => 6.5 + Math.sin(x * 0.16) * 2.6 + Math.sin(x * 0.05 + 1) * 1.6;
@@ -84,6 +124,7 @@ function newState() {
     name: 'Villanueva', style: 'clasico', money: 60000, minutes: 7 * 60, day: 1, approval: 62, speed: 1,
     taxes: { res: 12, com: 12, off: 12, ind: 12 },
     funding: Object.fromEntries(FUNDS.map(([k]) => [k, 100])),
+    party: null, laws: {}, nextElection: 1 + ELECTION_EVERY, terms: 0, history: [],
     loan: null, weather: 'sun', tutorial: 0, tutorialHidden: false, budgetSeen: false, best: 0,
     tiles: Array.from({ length: N * N }, (_, i) => ({ t: 0, z: null, lv: 0, s: null, v: 0, tree: initialTree(i) })),
   };
@@ -91,7 +132,11 @@ function newState() {
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-    if (s && Array.isArray(s.tiles) && s.tiles.length === N * N) return Object.assign(newState(), s);
+    if (s && Array.isArray(s.tiles) && s.tiles.length === N * N) {
+      const fresh = newState();
+      // merge nested settings so saves from older versions pick up new budget lines
+      return Object.assign(fresh, s, { funding: { ...fresh.funding, ...s.funding }, taxes: { ...fresh.taxes, ...s.taxes }, laws: { ...s.laws } });
+    }
   } catch { /* corrupt or unavailable storage: start fresh */ }
   return newState();
 }
@@ -341,8 +386,20 @@ function buildChunk(c) {
   emittersDirty = true;
 }
 
+const rotors = new Map(); // tile index -> spinning wind turbine rotor
 function refreshTile(i, animate = false) {
   const T = S.tiles[i];
+  if (rotors.has(i)) { scene.remove(rotors.get(i)); rotors.delete(i); }
+  if (T.t === 'svc' && T.s === 'wind') {
+    const holder = new THREE.Group(), rotor = windRotor();
+    holder.position.set(W(i % N), 0, W((i / N) | 0));
+    holder.rotation.y = facing(i % N, (i / N) | 0);
+    rotor.position.set(0, 1.62, 0.08);
+    holder.add(rotor);
+    holder.userData.rotor = rotor;
+    scene.add(holder);
+    rotors.set(i, holder);
+  }
   if (animating.has(i)) { disposeGroup(animating.get(i)); animating.delete(i); }
   if (animate && T.t !== 'road') {
     const b = tileBuilder(i);
@@ -375,6 +432,40 @@ const nearRoad = (x, z, r = 2) => {
   return false;
 };
 const fundQ = (k) => clamp(S.funding[k] / 100, 0, 1.5);
+const law = (id) => !!S.laws[id];
+const party = () => PARTIES[S.party] || PARTIES.centro;
+
+function radiusOf(k) {
+  let r = SERVICES[k].radius * clamp(fundQ(SERVICES[k].fund), 0.4, 1.3);
+  if (k === 'health' && law('sanidad')) r *= 1.3;
+  if (k === 'police' && law('manodura')) r *= 1.4;
+  if (law('privatizar')) r *= 0.85;
+  return r;
+}
+function upkeepOf(k) {
+  let u = SERVICES[k].upkeep * fundQ(SERVICES[k].fund);
+  if (k === 'health' && law('sanidad')) u *= 1.4;
+  if (k === 'school' && law('educacion')) u *= 1.3;
+  if (k === 'police' && law('manodura')) u *= 1.3;
+  if (SERVICES[k].fund === 'utilities' && law('reciclaje')) u *= 1.15;
+  if (law('privatizar')) u *= 0.75;
+  return u;
+}
+function buildCost(t) {
+  let c = t.cost;
+  if (t.svc && SERVICES[t.svc].green && law('verde')) c *= 0.6;
+  return Math.round(c);
+}
+function growthFactor(z) {
+  let f = clamp(1.4 - S.taxes[z] / 20, 0.15, 1.2);
+  if (z !== 'res') {
+    if (law('empresas')) f *= 1.4;
+    if (S.party === 'derecha') f *= 1.2;
+    if (S.party === 'izquierda') f *= 0.9;
+  }
+  if (z === 'com' && law('silencio')) f *= 0.8;
+  return f;
+}
 
 let D = null; // derived stats, refreshed every game hour and after edits
 function compute() {
@@ -383,98 +474,130 @@ function compute() {
     roads: 0, svc: {}, svcList: [], zoneTiles: { res: 0, com: 0, off: 0, ind: 0 }, buildings: 0, cov: {}, smoke: 0,
   };
   const homes = [], polluters = [];
+  const indRange = law('industria') ? 2 : 0;
   S.tiles.forEach((T, i) => {
     const x = i % N, z = (i / N) | 0;
     if (T.t === 'road') d.roads++;
     else if (T.t === 'svc') {
+      const def = SERVICES[T.s];
       d.svc[T.s] = (d.svc[T.s] || 0) + 1;
       d.svcList.push([T.s, x, z]);
       const eff = 0.5 + 0.5 * Math.min(1, fundQ('utilities'));
-      if (T.s === 'power') { d.powerCap += SERVICES.power.cap * eff; polluters.push([x, z, 6]); }
-      else if (T.s === 'water') d.waterCap += SERVICES.water.cap * eff;
-      else if (T.s !== 'park') { d.powerUse += 3; d.waterUse += 3; }
+      if (def.plant === 'power') d.powerCap += def.cap * eff;
+      else if (def.plant === 'water') d.waterCap += def.cap * eff;
+      else if (!def.noPower) { d.powerUse += 3; d.waterUse += 3; }
+      if (def.smoke) polluters.push([x, z, def.smoke[0], def.smoke[1]]);
     } else if (T.t === 'zone') {
       d.zoneTiles[T.z]++;
       if (!T.lv) return;
       d.buildings++;
-      const v = ZONES[T.z].cap[T.lv];
+      let v = ZONES[T.z].cap[T.lv];
+      if (T.z === 'ind' && law('industria')) v = Math.round(v * 1.3);
+      if (T.z === 'com' && law('horarios')) v = Math.round(v * 1.25);
       if (T.z === 'res') { d.pop += v; homes.push([x, z, v]); }
       else { d.jobs[T.z] += v; d.jobsTotal += v; }
       d.powerUse += T.lv * ({ res: 2, com: 3, off: 4, ind: 5 })[T.z];
       d.waterUse += T.lv * ({ res: 3, com: 2, off: 2, ind: 4 })[T.z];
-      if (T.z === 'ind') polluters.push([x, z, 3 + T.lv]);
+      if (T.z === 'ind') polluters.push([x, z, 3 + T.lv + indRange, 1]);
     }
   });
-  for (const k of ['police', 'fire', 'health', 'school', 'park']) {
-    const list = d.svcList.filter(([s]) => s === k), radius = SERVICES[k].radius * clamp(fundQ(k), 0.4, 1.3);
-    let covered = 0;
-    for (const [hx, hz, p] of homes) if (list.some(([, sx, sz]) => Math.hypot(sx - hx, sz - hz) <= radius)) covered += p;
-    d.cov[k] = d.pop ? covered / d.pop : 0;
-  }
+  const covered = (kinds) => {
+    const list = d.svcList.filter(([s]) => kinds.includes(s)).map(([s, x, z]) => [x, z, radiusOf(s)]);
+    let c = 0;
+    for (const [hx, hz, p] of homes) if (list.some(([sx, sz, r]) => Math.hypot(sx - hx, sz - hz) <= r)) c += p;
+    return d.pop ? c / d.pop : 0;
+  };
+  for (const k of ['police', 'fire', 'health', 'school', 'park']) d.cov[k] = covered([k]);
+  d.cov.leisure = covered(Object.keys(SERVICES).filter((k) => SERVICES[k].leisure));
   let smoky = 0;
-  for (const [hx, hz, p] of homes) if (polluters.some(([px, pz, r]) => Math.hypot(px - hx, pz - hz) <= r)) smoky += p;
-  d.smoke = d.pop ? smoky / d.pop : 0;
+  for (const [hx, hz, p] of homes) {
+    let w = 0;
+    for (const [px, pz, r, s] of polluters) if (Math.hypot(px - hx, pz - hz) <= r) w = Math.max(w, s);
+    smoky += p * w;
+  }
+  d.smoke = (d.pop ? smoky / d.pop : 0) * (law('verde') ? 0.7 : 1) * (law('reciclaje') ? 0.6 : 1);
   d.workers = d.pop * 0.55;
+  d.employed = Math.min(d.workers, d.jobsTotal);
   d.filled = d.jobsTotal ? Math.min(1, d.workers / d.jobsTotal) : 0;
   d.powerOk = d.powerUse <= d.powerCap;
   d.waterOk = d.waterUse <= d.waterCap;
   d.demand = {
-    res: d.jobsTotal * 1.8 + 120 - d.pop,
+    res: d.jobsTotal * 1.8 + 120 - d.pop + (law('alquiler') ? 25 : 0),
     com: d.pop * 0.3 + 16 - d.jobs.com,
     off: d.pop > 120 ? d.pop * 0.25 + 12 - d.jobs.off : 0,
     ind: d.pop * 0.3 + 30 - d.jobs.ind,
   };
+  // electorate: business-heavy cities lean right, well-served ones lean left
+  const biz = d.jobsTotal ? (d.jobs.off + d.jobs.ind) / d.jobsTotal : 0.5;
+  const lawLean = LAWS.reduce((a, l) => a + (law(l.id) ? l.lean : 0), 0);
+  d.right = clamp(0.5 + (biz - 0.5) * 0.3 - (d.cov.health + d.cov.school - 1) * 0.06 + lawLean * 0.02, 0.25, 0.75);
   d.fin = finances(d);
   d.rows = approvalRows(d);
   d.goal = clamp(Math.round(d.rows.reduce((a, r) => a + r[2], 0)), 0, 100);
+  d.vote = voteShare(d);
   return d;
 }
 
 function finances(d) {
+  const tourismBase = d.svcList.reduce((a, [s]) => a + (SERVICES[s].tourism || 0), 0);
   const income = {
-    res: d.pop * S.taxes.res * 0.9,
-    com: d.jobs.com * d.filled * S.taxes.com * 1.2,
-    off: d.jobs.off * d.filled * S.taxes.off * 1.5,
-    ind: d.jobs.ind * d.filled * S.taxes.ind * 1.1,
+    res: d.pop * S.taxes.res * 0.9 * (law('alquiler') ? 0.85 : 1),
+    com: d.jobs.com * d.filled * S.taxes.com * 1.2 * (law('empresas') ? 0.8 : 1) * (law('horarios') ? 1.15 : 1),
+    off: d.jobs.off * d.filled * S.taxes.off * 1.5 * (law('empresas') ? 0.8 : 1),
+    ind: d.jobs.ind * d.filled * S.taxes.ind * 1.1 * (law('empresas') ? 0.8 : 1),
+    tourism: tourismBase * clamp(d.pop / 400, 0.2, 1.5) * (0.5 + S.approval / 100) * fundQ('leisure') * (law('turismo') ? 1.6 : 1),
   };
-  const count = (k) => d.svc[k] || 0;
-  const expense = {
-    police: count('police') * SERVICES.police.upkeep * fundQ('police'),
-    fire: count('fire') * SERVICES.fire.upkeep * fundQ('fire'),
-    health: count('health') * SERVICES.health.upkeep * fundQ('health'),
-    school: count('school') * SERVICES.school.upkeep * fundQ('school'),
-    park: count('park') * SERVICES.park.upkeep * fundQ('park'),
-    utilities: (count('power') * SERVICES.power.upkeep + count('water') * SERVICES.water.upkeep) * fundQ('utilities'),
-    roads: d.roads * 6 * fundQ('roads'),
-  };
+  const expense = Object.fromEntries(FUNDS.map(([k]) => [k, 0]));
+  for (const [s] of d.svcList) expense[SERVICES[s].fund] += upkeepOf(s);
+  expense.roads = d.roads * 6 * fundQ('roads');
+  const laws = LAWS.reduce((a, l) => a + (law(l.id) ? l.cost : 0), 0);
   const loan = S.loan ? S.loan.perDay : 0;
-  const inc = Object.values(income).reduce((a, b) => a + b, 0), exp = Object.values(expense).reduce((a, b) => a + b, 0) + loan;
-  return { income, expense, loan, inc, exp, net: inc - exp };
+  const inc = Object.values(income).reduce((a, b) => a + b, 0), exp = Object.values(expense).reduce((a, b) => a + b, 0) + loan + laws;
+  return { income, expense, loan, laws, inc, exp, net: inc - exp };
 }
 
 function approvalRows(d) {
   const rows = [['🏛️', 'Base: la gente siempre espera algo más del ayuntamiento', 60]];
   if (!d.pop) return rows;
+  const care = S.party === 'izquierda' ? 1.2 : S.party === 'derecha' ? 0.9 : 1;
   const svc = [['health', '➕', 'El médico está cerca'], ['school', '🎓', 'Buenas escuelas en el barrio'],
     ['police', '🛡️', 'Con la policía cerca se duerme tranquilo'], ['fire', '🚒', 'Los bomberos llegan a tiempo'], ['park', '🌳', 'Hay parques donde pasear']];
-  for (const [k, ic, label] of svc) rows.push([ic, label, 5 * d.cov[k] * Math.min(1, fundQ(k))]);
+  for (const [k, ic, label] of svc) rows.push([ic, label, 5 * d.cov[k] * Math.min(1, fundQ(k)) * care]);
+  if (d.cov.leisure > 0) rows.push(['🎡', 'Ocio y cultura cerca de casa', 4 * d.cov.leisure * Math.min(1, fundQ('leisure'))]);
   const ratio = d.workers ? d.jobsTotal / d.workers : 1;
   rows.push(ratio >= 1 ? ['💼', 'Hay trabajo para todos', 3] : ['💼', 'Falta trabajo', -Math.round((1 - ratio) * 10)]);
   if (d.smoke > 0.01) rows.push(['🏭', 'Humo de las chimeneas: la gente tose', -8 * d.smoke]);
   if (!d.powerOk) rows.push(['⚡', 'Apagones en las casas', -12 * (1 - d.powerCap / d.powerUse)]);
   if (!d.waterOk) rows.push(['💧', 'Grifos secos', -12 * (1 - d.waterCap / d.waterUse)]);
-  const high = Object.values(S.taxes).reduce((a, t) => a + Math.max(0, t - 14), 0);
-  if (high) rows.push(['🏷️', 'Impuestos demasiado altos', -high * 1.5]);
-  else if (Object.values(S.taxes).every((t) => t <= 9)) rows.push(['🏷️', 'Impuestos bajos', 2]);
+  const limit = party().taxLimit;
+  const high = Object.values(S.taxes).reduce((a, t) => a + Math.max(0, t - limit), 0);
+  if (high) rows.push(['🏷️', `Impuestos por encima del ${limit} %`, -high * 1.5]);
+  else if (Object.values(S.taxes).every((t) => t <= (S.party === 'derecha' ? 10 : 9))) rows.push(['🏷️', 'Impuestos bajos', 2]);
   const cuts = FUNDS.reduce((a, [k]) => a + Math.max(0, 70 - S.funding[k]), 0);
   if (cuts) rows.push(['✂️', 'Recortes en los servicios', -cuts / 10]);
+  const popular = LAWS.reduce((a, l) => a + (law(l.id) ? l.bonus : 0), 0);
+  if (popular) rows.push(['📜', 'Leyes que gustan a los vecinos', popular]);
+  if (S.party) {
+    const lean = party().lean;
+    const fit = LAWS.reduce((a, l) => {
+      if (!law(l.id)) return a;
+      if (lean === 0) return a + (l.lean === 0 ? 1 : -0.5);
+      return a + (l.lean === lean ? 1 : l.lean === -lean ? -1.5 : 0);
+    }, 0);
+    if (fit) rows.push([party().icon, fit > 0 ? 'Cumples tu programa electoral' : 'Tus votantes no entienden tus leyes', fit]);
+  }
   if (S.money < 0) rows.push(['📉', 'La ciudad está en números rojos', -8]);
   const sum = rows.reduce((a, r) => a + r[2], 0), rounded = rows.reduce((a, r) => a + Math.round(r[2]), 0);
   if (Math.round(sum) !== rounded) rows.push(['≈', 'Otros y redondeo', Math.round(sum) - rounded]);
   return rows;
 }
 
-const taxFactor = (z) => clamp(1.4 - S.taxes[z] / 20, 0.15, 1.2);
+// share of the vote your list would get if elections were held today
+function voteShare(d) {
+  const lean = S.party ? party().lean : 0;
+  const affinity = lean === 1 ? d.right : lean === -1 ? 1 - d.right : 0.55;
+  return clamp(Math.round(S.approval * 0.8 + (affinity - 0.5) * 30 + 8), 5, 95);
+}
 
 function growth(d) {
   if (!d.powerCap || !d.waterCap) return;
@@ -489,14 +612,15 @@ function growth(d) {
     const utilOk = d.powerOk && d.waterOk;
     if (T.lv === 0) {
       if (!utilOk) continue;
-      if (Math.random() < 0.3 * clamp(demand[T.z] / 30, 0.15, 1) * taxFactor(T.z) * mood) {
+      if (Math.random() < 0.3 * clamp(demand[T.z] / 30, 0.15, 1) * growthFactor(T.z) * mood) {
         T.lv = 1; T.v = Math.floor(Math.random() * 1000); T.tree = false;
         demand[T.z] -= ZONES[T.z].cap[1]; spawned[T.z]++;
         refreshTile(i, true);
       }
     } else if (T.lv < 3 && utilOk && S.approval >= (T.lv === 2 ? 70 : 55)) {
       if (T.z === 'off' && d.pop < 300) continue;
-      if (Math.random() < 0.02 * taxFactor(T.z)) {
+      const boost = T.z === 'res' && T.lv === 2 && law('educacion') ? 1.5 : 1;
+      if (Math.random() < 0.02 * growthFactor(T.z) * boost) {
         T.lv++; T.v = Math.floor(Math.random() * 1000);
         demand[T.z] -= ZONES[T.z].cap[T.lv] - ZONES[T.z].cap[T.lv - 1]; spawned[T.z]++;
         refreshTile(i, true);
@@ -527,10 +651,29 @@ function hourTick() {
 function dayTick() {
   S.day++;
   S.weather = Math.random() < 0.22 ? 'rain' : 'sun';
+  if (S.day >= S.nextElection) return election();
+  const left = S.nextElection - S.day;
+  if (left === 2) return news(`Quedan 2 días para las elecciones. Intención de voto: ${D ? D.vote : '?'} %.`, 'ELECCIONES');
   if (S.weather === 'rain') news(`Día ${S.day}: se esperan lluvias durante toda la jornada.`, 'TIEMPO');
   else if (Math.random() < 0.5) news(`Ciudades vecinas: ${pick(Math.random, NEIGHBOURS)} ${pick(Math.random, [
     'estrena mercado de abastos.', 'sufre una sequía: se secaron los pozos.', 'ha subido los impuestos y sus vecinos se quejan.',
-    'inaugura un carril bici junto al río.', 'celebra sus fiestas patronales.'])}`, 'VECINOS');
+    'inaugura un carril bici junto al río.', 'celebra sus fiestas patronales.', 'abre un zoológico y le roba turistas a todo el valle.'])}`, 'VECINOS');
+}
+
+function election() {
+  S.nextElection = S.day + ELECTION_EVERY;
+  D = compute();
+  if (D.pop < 30) { news('Elecciones aplazadas: la ciudad aún no tiene censo suficiente.', 'ELECCIONES'); return; }
+  const mine = clamp(D.vote + Math.round((Math.random() - 0.5) * 8), 5, 95);
+  const won = mine >= 50;
+  const others = Object.keys(PARTIES).filter((k) => k !== (S.party || 'centro'));
+  const split = 0.35 + Math.random() * 0.3, a = Math.round((100 - mine) * split);
+  const result = { day: S.day, mine, won, rivals: [[others[0], a], [others[1], 100 - mine - a]] };
+  S.history.push(result);
+  if (won) { S.terms++; S.approval = Math.min(100, S.approval + 3); }
+  news(won ? `¡${party().name} gana las elecciones con el ${mine} % de los votos!` : `${party().name} pierde las elecciones (${mine} %).`, 'ELECCIONES');
+  setSpeed(0);
+  showElection(result);
 }
 
 /* ---------------------------------------------------------------- news ticker */
@@ -548,14 +691,16 @@ function hourlyNews(d) {
   const milestones = [50, 100, 250, 500, 1000, 2000, 4000, 8000];
   const m = milestones.filter((v) => d.pop >= v).pop();
   if (m && m > S.best) { S.best = m; news(`¡${S.name} ya tiene ${fmt(m)} habitantes!`, 'CIUDAD'); return; }
-  if (d.zoneTiles.res && !d.powerCap) return void warn('power0', 'Sin central eléctrica no se mudará nadie. Busca ⚡ en "Luz y agua".');
-  if (d.zoneTiles.res && !d.waterCap) return void warn('water0', 'Sin torre de agua no se mudará nadie. Busca 💧 en "Luz y agua".');
+  if (d.zoneTiles.res && !d.powerCap) return void warn('power0', 'Sin central eléctrica no se mudará nadie. Busca ⚡ en "Energía y agua".');
+  if (d.zoneTiles.res && !d.waterCap) return void warn('water0', 'Sin torre de agua no se mudará nadie. Busca 💧 en "Energía y agua".');
   if (!d.powerOk && warn('power', 'Apagones: la ciudad consume más luz de la que produce.')) return;
   if (!d.waterOk && warn('water', 'Falta agua: construye otra torre de agua.')) return;
   if (S.money < 0 && warn('money', 'Las cuentas están en rojo. Revisa el presupuesto.')) return;
   if (d.pop > 40 && d.cov.health < 0.5 && warn('health', 'Los vecinos piden un centro de salud más cerca.', 12)) return;
   if (d.pop > 40 && d.cov.school < 0.5 && warn('school', 'Las familias quieren una escuela en su barrio.', 12)) return;
   if (d.smoke > 0.3 && warn('smoke', 'El humo de las fábricas llega a las casas. Separa la industria.', 12)) return;
+  if (d.pop > 150 && !d.svc.cityhall && warn('hall', 'Sin ayuntamiento no puedes aprobar leyes. Búscalo en "Servicios".', 24)) return;
+  if (d.pop > 250 && d.cov.leisure < 0.3 && warn('fun', 'Los vecinos se aburren: piden una plaza, un museo o un zoológico.', 24)) return;
 }
 
 /* ---------------------------------------------------------------- tutorial */
@@ -565,8 +710,10 @@ const STEPS = [
   { title: 'Luz y agua', text: 'Las casas no crecen sin servicios básicos. Coloca una central eléctrica y una torre de agua cerca de una calle.', done: (d) => d.powerCap > 0 && d.waterCap > 0, tool: 'power' },
   { title: 'Crea empleo', text: 'Marca zonas de Comercio e Industria. Pon la industria lejos de las casas: su humo molesta.', done: (d) => d.zoneTiles.com + d.zoneTiles.ind >= 6, tool: 'com' },
   { title: 'Cuida a los vecinos', text: 'Un centro de salud y una escuela cerca de las casas suben mucho la aprobación.', done: (d) => d.svc.health && d.svc.school, tool: 'health' },
+  { title: 'Construye el ayuntamiento', text: 'Está en "Servicios". Desde él podrás aprobar leyes en 🏛️ Política.', done: (d) => d.svc.cityhall, tool: 'cityhall' },
+  { title: 'Aprueba tu primera ley', text: 'Abre 🏛️ Política y aprueba una ley. Las que encajan con tu partido gustan a tus votantes.', done: () => LAWS.some((l) => law(l.id)), action: () => openModal('politicsModal') },
   { title: 'Revisa el presupuesto', text: 'Ajusta impuestos y fondos en 📊 Presupuesto. Más impuestos, más dinero, pero menos crecimiento.', done: () => S.budgetSeen, action: () => openModal('budgetModal') },
-  { title: '¡Tu ciudad está en marcha!', text: 'Sigue creciendo, vigila la ❤️ aprobación y acelera el tiempo con ⏩. Clic derecho y arrastrar gira la cámara.' },
+  { title: '¡Tu ciudad está en marcha!', text: `Cada ${ELECTION_EVERY} días hay elecciones: vigila la ❤️ aprobación y la intención de voto. Añade ocio (zoológico, estadio, museo) para atraer turistas.` },
 ];
 function renderAdvisor() {
   const st = STEPS[S.tutorial];
@@ -607,7 +754,7 @@ function renderToolbar() {
   sub.classList.toggle('open', cat.id !== 'look');
   if (cat.id === 'look') return;
   for (const t of cat.tools) {
-    const b = el('button', 'st', `<span class="ic">${t.icon}</span><span>${t.label}<small>${t.mode === 'one' ? money(t.cost) : `${money(t.cost)} / casilla`}</small></span>`);
+    const b = el('button', 'st', `<span class="ic">${t.icon}</span><span>${t.label}<small>${t.mode === 'one' ? money(buildCost(t)) : `${money(t.cost)} / casilla`}</small></span>`);
     b.setAttribute('aria-pressed', tool.id === t.id);
     b.title = t.hint || '';
     b.onclick = () => selectTool(t.id);
@@ -683,7 +830,9 @@ function evaluate(i) {
       }
       if (WATER[i]) return { ok: false, why: 'No se puede construir sobre el agua' };
       if (T.t && !(T.t === 'zone' && T.lv === 0)) return { ok: false, why: 'La casilla está ocupada' };
-      return { ok: true, cost: tool.cost + treeCost, warn: nearRoad(i % N, (i / N) | 0, 1) ? '' : 'Necesita una calle al lado para funcionar' };
+      if (SERVICES[tool.svc].unique && D?.svc[tool.svc]) return { ok: false, why: 'Solo puede haber uno en la ciudad' };
+      if (tool.svc === 'coal' && law('verde')) return { ok: false, why: 'Prohibido por el Pacto verde' };
+      return { ok: true, cost: buildCost(tool) + treeCost, warn: nearRoad(i % N, (i / N) | 0, 1) ? '' : 'Necesita una calle al lado para funcionar' };
   }
 }
 
@@ -765,7 +914,9 @@ function describe(i) {
   if (T.t === 'road') return `<b>🛣️ ${WATER[i] ? 'Puente' : 'Calle'}</b>`;
   if (T.t === 'svc') {
     const s = SERVICES[T.s];
-    const extra = s.cap ? `Capacidad: ${s.cap} ${T.s === 'power' ? '⚡' : '💧'}` : `Radio: ${s.radius} casillas · ${money(s.upkeep)}/día`;
+    const extra = s.cap ? `Produce ${s.cap} ${s.plant === 'power' ? '⚡' : '💧'}${s.smoke ? ' · contamina' : ''} · ${money(upkeepOf(T.s))}/día`
+      : s.radius ? `Radio: ${Math.round(radiusOf(T.s))} casillas · ${money(upkeepOf(T.s))}/día${s.tourism ? ' · atrae turistas' : ''}`
+      : `Aquí se aprueban las leyes · ${money(upkeepOf(T.s))}/día`;
     return `<b>${s.icon} ${s.label}</b>${extra}${nearRoad(x, z, 1) ? '' : '<br><span class="bad">Sin calle al lado</span>'}`;
   }
   if (T.t === 'zone') {
@@ -823,6 +974,10 @@ function updateHud() {
   $('sJobs').textContent = `${fmt(Math.min(D.workers, D.jobsTotal))}/${fmt(D.jobsTotal)}`;
   if ($('approvalModal').classList.contains('open')) renderApproval();
   if ($('budgetModal').classList.contains('open')) renderBudgetNumbers();
+  const days = S.nextElection - S.day;
+  $('sVote').textContent = `${D.vote} % voto`;
+  $('sVote').style.color = D.vote >= 50 ? '' : 'var(--accent)';
+  $('sElection').textContent = days <= 1 ? 'elecciones mañana' : `elecciones en ${days} días`;
 }
 
 function openModal(id) {
@@ -830,6 +985,9 @@ function openModal(id) {
   $(id).classList.add('open');
   if (id === 'approvalModal') renderApproval();
   if (id === 'budgetModal') { S.budgetSeen = true; renderBudget(); if (D) checkTutorial(D); }
+  if (id === 'politicsModal') renderPolitics();
+  if (id === 'partyModal') renderParties();
+  if (id === 'citizensModal') renderCitizens();
 }
 function closeModals() { document.querySelectorAll('.modal.open').forEach((m) => m.classList.remove('open')); }
 document.querySelectorAll('.modal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) closeModals(); }));
@@ -880,6 +1038,8 @@ function renderBudgetNumbers() {
   $('bBalanceNote').textContent = f.net >= 0 ? 'los fondos crecen' : 'los fondos bajan';
   document.querySelectorAll('[data-tax]').forEach((s) => (s.textContent = signed(f.income[s.dataset.tax])));
   document.querySelectorAll('[data-fund]').forEach((s) => (s.textContent = `−${fmt(f.expense[s.dataset.fund])}`));
+  $('bTourism').textContent = signed(f.income.tourism);
+  $('bLaws').textContent = `−${fmt(f.laws)}`;
   $('loanText').textContent = S.loan ? `Quedan ${money(S.loan.left)} por devolver (${money(S.loan.perDay)} al día).` : 'Recibes 25.000 € y devuelves 28.000 € en 20 días (12 %).';
   $('loanBtn').disabled = !!S.loan;
 }
@@ -890,6 +1050,137 @@ $('loanBtn').onclick = () => {
   news('El banco concede un préstamo de 25.000 € a la ciudad.');
   D = compute(); renderBudgetNumbers(); updateHud(); save();
 };
+
+/* politics: party, laws, elections */
+const LEAN_LABEL = { '-1': ['Izquierda', '#d33a2f'], 0: ['Consenso', '#d99a2b'], 1: ['Derecha', '#3f6fb5'] };
+$('openPolitics').onclick = () => openModal('politicsModal');
+$('openCitizens').onclick = () => openModal('citizensModal');
+
+function renderParties() {
+  $('partyCards').innerHTML = Object.entries(PARTIES).map(([k, p]) => `
+    <article class="party ${S.party === k ? 'on' : ''}" style="--c:${p.color}">
+      <div class="party-head"><span class="party-icon">${p.icon}</span><div><b>${p.name}</b><small>${p.label}</small></div></div>
+      <p>${p.pitch}</p>
+      <button class="btn ${S.party === k ? '' : 'primary'}" data-party="${k}" ${S.party === k ? 'disabled' : ''}>${S.party === k ? 'Tu partido' : 'Presentarme con este partido'}</button>
+    </article>`).join('');
+  $('partyNote').textContent = S.party ? 'Cambiar de partido a mitad de mandato cuesta 10 puntos de aprobación: los vecinos no se fían de los chaqueteros.' : 'Podrás cambiar más adelante, pero tendrá un coste.';
+}
+$('partyCards').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-party]');
+  if (!b) return;
+  const k = b.dataset.party;
+  if (S.party && !confirm(`¿Cambiarte a ${PARTIES[k].name}? Perderás 10 puntos de aprobación.`)) return;
+  if (S.party) S.approval = Math.max(0, S.approval - 10);
+  S.party = k;
+  news(`${S.name}: la alcaldía se presenta con ${PARTIES[k].name}.`, 'POLÍTICA');
+  D = compute(); updateHud(); save();
+  openModal('politicsModal');
+});
+
+function renderPolitics() {
+  const p = party(), hall = !!D.svc.cityhall, days = S.nextElection - S.day;
+  $('polParty').innerHTML = S.party
+    ? `<span class="party-icon" style="--c:${p.color}">${p.icon}</span><div><b>${p.name}</b><small>${p.label} · ${S.terms} ${S.terms === 1 ? 'mandato ganado' : 'mandatos ganados'}</small></div>`
+    : '<span class="party-icon">❔</span><div><b>Sin partido</b><small>Te presentas como independiente</small></div>';
+  $('polVote').textContent = `${D.vote} %`;
+  $('polVote').className = D.vote >= 50 ? 'pos' : 'negc';
+  $('polDays').textContent = days <= 0 ? 'hoy' : `en ${days} ${days === 1 ? 'día' : 'días'}`;
+  $('polLean').innerHTML = `<span style="color:#d33a2f">${Math.round((1 - D.right) * 100)} % izq.</span> · <span style="color:#3f6fb5">${Math.round(D.right * 100)} % der.</span>`;
+  $('polLeanBar').style.setProperty('--r', `${D.right * 100}%`);
+  $('lawWarn').style.display = hall ? 'none' : '';
+  $('lawList').innerHTML = LAWS.map((l) => {
+    const on = law(l.id), [lean, c] = LEAN_LABEL[l.lean];
+    const blocked = !on && (!hall || S.money < LAW_FEE);
+    return `<article class="law ${on ? 'on' : ''}">
+      <div class="law-head"><span class="ic">${l.icon}</span><b>${l.name}</b><span class="lean" style="--c:${c}">${lean}</span></div>
+      <p>${l.effect}</p>
+      <button class="btn ${on ? '' : 'primary'}" data-law="${l.id}" ${blocked ? 'disabled' : ''}>${on ? 'Derogar' : `Aprobar · ${money(LAW_FEE)}`}</button>
+    </article>`;
+  }).join('');
+  $('polHistory').innerHTML = S.history.length
+    ? S.history.slice(-6).reverse().map((h) => `<li><span>${h.won ? '🏆' : '❌'}</span><span>Día ${h.day}: ${h.won ? 'ganaste' : 'perdiste'}</span><b>${h.mine} %</b></li>`).join('')
+    : '<li><span>🗳️</span><span class="note">Todavía no ha habido elecciones.</span><b></b></li>';
+}
+$('lawList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-law]');
+  if (!b) return;
+  const l = LAW_BY_ID[b.dataset.law];
+  if (law(l.id)) { delete S.laws[l.id]; news(`El pleno deroga la ley: ${l.name.toLowerCase()}.`, 'POLÍTICA'); }
+  else {
+    if (!D.svc.cityhall || S.money < LAW_FEE) return;
+    S.money -= LAW_FEE; S.laws[l.id] = S.day;
+    news(`El pleno aprueba: ${l.name.toLowerCase()}.`, 'POLÍTICA');
+  }
+  D = compute(); checkTutorial(D); renderPolitics(); updateHud(); save();
+});
+$('polChangeParty').onclick = () => openModal('partyModal');
+
+function showElection(r) {
+  const rows = [[S.party || 'centro', r.mine, true], ...r.rivals.map(([k, v]) => [k, v, false])].sort((a, b) => b[1] - a[1]);
+  $('elTitle').textContent = r.won ? '🏆 ¡Has ganado las elecciones!' : '❌ Has perdido las elecciones';
+  $('elText').textContent = r.won
+    ? `Los vecinos de ${S.name} te dan ${S.terms === 1 ? 'su confianza' : 'otro mandato'}. Próximas elecciones el día ${S.nextElection}.`
+    : 'La oposición te deja seguir en funciones, pero tendrás que repetir elecciones en 5 días y pagar otra campaña.';
+  $('elBars').innerHTML = rows.map(([k, v, me]) => `<div class="vote"><span>${PARTIES[k].icon} ${PARTIES[k].name}${me ? ' (tú)' : ''}</span>
+    <div class="bar"><i style="width:${v}%;background:${PARTIES[k].color}"></i></div><b>${v} %</b></div>`).join('');
+  $('elActions').innerHTML = r.won
+    ? '<button class="btn primary" data-el="go">¡A gobernar!</button>'
+    : '<button class="btn primary" data-el="again">Repetir campaña (−10.000 €)</button><button class="btn" data-el="new">Empezar otra ciudad</button>';
+  openModal('electionModal');
+}
+$('elActions').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-el]');
+  if (!b) return;
+  if (b.dataset.el === 'again') { S.money -= 10000; S.nextElection = S.day + 5; S.approval = Math.max(0, S.approval - 5); }
+  if (b.dataset.el === 'new') { closeModals(); return void newCity(true); }
+  closeModals(); setSpeed(lastSpeed || 1); updateHud(); save();
+});
+
+/* citizens */
+function citizenQuotes(d) {
+  const out = [], add = (good, text) => out.push([good, text]);
+  const unemployed = d.workers ? 1 - d.employed / d.workers : 0;
+  if (d.cov.health < 0.5) add(0, 'El centro de salud me pilla lejísimos. Si me pongo mala, ¿qué hago?'); else add(1, 'Tener el médico a dos calles es una tranquilidad.');
+  if (d.cov.school < 0.5) add(0, 'Mis hijos tardan media hora en llegar al colegio.'); else add(1, 'El colegio del barrio es estupendo.');
+  if (d.cov.police < 0.5) add(0, 'Por la noche no me atrevo a salir: no se ve un policía.');
+  if (d.cov.fire < 0.5) add(0, 'Si hay un incendio, ¿cuánto tardarán los bomberos?');
+  if (d.cov.park < 0.5) add(0, 'Echo de menos un parque para sacar al perro.');
+  if (d.pop > 100 && d.cov.leisure < 0.3) add(0, 'Aquí no hay nada que hacer el fin de semana.');
+  if (d.cov.leisure >= 0.5) add(1, D.svc.zoo ? '¡Los domingos llevamos a los niños al zoo!' : D.svc.stadium ? 'Los partidos en el estadio son lo mejor de la semana.' : 'Qué ambiente hay en la plaza por las tardes.');
+  if (d.smoke > 0.2) add(0, 'El humo de las fábricas me hace toser.');
+  if (!d.powerOk) add(0, 'Otra vez sin luz. ¡Así no se puede vivir!');
+  if (!d.waterOk) add(0, 'Hoy no ha salido agua del grifo.');
+  if (unemployed > 0.1) add(0, 'Llevo meses buscando trabajo y nada.'); else if (d.pop) add(1, 'He encontrado trabajo cerca de casa.');
+  if (Object.values(S.taxes).some((t) => t > party().taxLimit)) add(0, 'Con estos impuestos no llego a fin de mes.');
+  if (S.money < 0) add(0, 'Dicen que el ayuntamiento está en la ruina…');
+  const lawQuotes = {
+    transporte: [1, 'Con el bus gratis me ahorro un dineral.'], sanidad: [1, 'Me atendieron sin pagar nada. Así da gusto.'],
+    educacion: [1, 'Este año los libros del cole nos han salido gratis.'], alquiler: [1, 'Por fin un alquiler que puedo pagar.'],
+    verde: [1, 'Me encanta que la ciudad apueste por las renovables.'], empresas: [1, 'He abierto mi negocio gracias a la rebaja fiscal.'],
+    manodura: [1, 'Ahora se ve policía en cada esquina.'], privatizar: [0, 'Desde que privatizaron, todo va más lento.'],
+    industria: [0, 'Han abierto otra fábrica al lado de casa. Qué peste.'], horarios: [1, 'Poder comprar un domingo es una maravilla.'],
+    turismo: [1, 'Mi bar se llena de turistas.'], reciclaje: [1, 'Las calles están más limpias que nunca.'],
+    silencio: [1, 'Por fin duermo sin ruido.'], fiestas: [1, '¡Qué fiestas más bonitas este año!'],
+  };
+  for (const l of LAWS) if (law(l.id)) add(...lawQuotes[l.id]);
+  const r = rng(S.day * 31 + Math.floor(d.pop / 50));
+  return out.sort(() => r() - 0.5).slice(0, 6).map(([good, text]) => [good, `${pick(r, NAMES)}, ${18 + Math.floor(r() * 60)}`, text]);
+}
+function renderCitizens() {
+  const d = D, kids = Math.round(d.pop * 0.2), old = Math.round(d.pop * 0.18), adults = d.pop - kids - old;
+  const unemployed = Math.max(0, Math.round(d.workers - d.employed));
+  $('ctPop').textContent = fmt(d.pop);
+  $('ctJobs').textContent = fmt(d.employed);
+  $('ctUnemp').textContent = `${fmt(unemployed)} (${d.workers ? Math.round((unemployed / d.workers) * 100) : 0} %)`;
+  $('ctAges').innerHTML = [['🧒 Niños', kids, '#f0cf60'], ['🧑 Adultos', adults, '#6aaeea'], ['🧓 Mayores', old, '#a58cef']].map(([l, v, c]) =>
+    `<div class="vote"><span>${l}</span><div class="bar"><i style="width:${d.pop ? (v / d.pop) * 100 : 0}%;background:${c}"></i></div><b>${fmt(v)}</b></div>`).join('')
+    + `<p class="note">${fmt(Math.round(kids * d.cov.school))} de ${fmt(kids)} niños tienen escuela cerca.</p>`;
+  $('ctLean').innerHTML = `<div class="lean-bar" style="--r:${d.right * 100}%"><i></i></div>
+    <p class="note"><span style="color:#d33a2f">${Math.round((1 - d.right) * 100)} % votaría izquierda</span> · <span style="color:#3f6fb5">${Math.round(d.right * 100)} % derecha</span>. Las ciudades con muchas oficinas e industria tiran a la derecha; las que tienen buenos servicios, a la izquierda.</p>`;
+  $('ctQuotes').innerHTML = d.pop
+    ? citizenQuotes(d).map(([good, who, text]) => `<li class="${good ? '' : 'neg'}"><span>${good ? '😊' : '😠'}</span><span><i class="serif">«${text}»</i><br><small class="note">${who} años</small></span><b></b></li>`).join('')
+    : '<li><span>🏡</span><span class="note">Todavía no vive nadie aquí.</span><b></b></li>';
+}
 
 /* menu */
 $('menuBtn').onclick = (e) => { e.stopPropagation(); $('menu').classList.toggle('open'); };
@@ -907,15 +1198,17 @@ $('styleSel').onchange = (e) => {
   news(`${S.name} adopta el estilo ${STYLES[S.style].label.toLowerCase()}.`, 'CIUDAD');
   save();
 };
-$('newCity').onclick = () => {
-  if (!confirm('¿Empezar una ciudad nueva? Se perderá la actual.')) return;
+function newCity(skipConfirm = false) {
+  if (!skipConfirm && !confirm('¿Empezar una ciudad nueva? Se perderá la actual.')) return;
   S = newState();
   setStyle(S.style);
   $('styleSel').value = S.style;
-  rebuildAll(); cars.forEach((c) => scene.remove(c.mesh)); cars.length = 0;
+  rebuildAll(); cars.forEach((c) => scene.remove(c.mesh)); cars.length = 0; walkers.length = 0;
   D = compute(); setSpeed(1); renderAdvisor(); updateHud(); save();
   news('Una nueva ciudad empieza hoy. ¡Suerte, alcaldía!');
-};
+  openModal('partyModal');
+}
+$('newCity').onclick = () => newCity();
 
 /* ---------------------------------------------------------------- living details: cars, smoke, rain */
 const cars = [];
@@ -931,7 +1224,7 @@ function roadNeighbours(i) {
 }
 function updateCars(dt) {
   if (!D) return;
-  const target = D.pop ? Math.min(45, Math.floor(D.roads / 5) + Math.floor(D.pop / 80)) : 0;
+  const target = D.pop ? Math.round(Math.min(45, Math.floor(D.roads / 5) + Math.floor(D.pop / 80)) * (law('transporte') ? 0.6 : 1)) : 0;
   if (cars.length < target) {
     const roads = S.tiles.map((T, i) => (T.t === 'road' ? i : -1)).filter((i) => i >= 0 && roadNeighbours(i).length);
     if (roads.length) {
@@ -957,6 +1250,44 @@ function updateCars(dt) {
     c.mesh.rotation.y = Math.atan2(dx, dz);
   }
   for (let n = cars.length - 1; n >= 0; n--) if (!cars[n].mesh.visible) { scene.remove(cars[n].mesh); cars.splice(n, 1); }
+}
+
+// pedestrians walk along the pavements of the road network
+const PEOPLE = 120, SKIN = [0xf1c9a5, 0xd9a47a, 0x9a6a4a, 0x6b4a33], CLOTHES = [0xd8342a, 0x2f5fb5, 0x4f9a5a, 0xe0a83a, 0x8a5fbf, 0x3b3f46, 0xf2efe6];
+const peopleMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.022, 0.05, 2, 6).translate(0, 0.047, 0),
+  new THREE.MeshStandardMaterial({ roughness: 0.8 }), PEOPLE);
+const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 6, 4).translate(0, 0.105, 0), new THREE.MeshStandardMaterial({ roughness: 0.8 }), PEOPLE);
+for (const m of [peopleMesh, headMesh]) { m.castShadow = true; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); }
+const walkers = [];
+function updatePeople(dt) {
+  if (!D) return;
+  const target = D.pop ? Math.min(PEOPLE, Math.floor(D.pop / 8) + 4) : 0;
+  if (walkers.length < target) {
+    const roads = S.tiles.map((T, i) => (T.t === 'road' && !WATER[i] ? i : -1)).filter((i) => i >= 0 && roadNeighbours(i).length);
+    if (roads.length) {
+      const from = pick(Math.random, roads), k = walkers.length;
+      walkers.push({ from, to: pick(Math.random, roadNeighbours(from)), t: Math.random(), side: Math.random() < 0.5 ? 1 : -1, v: 0.18 + Math.random() * 0.12, phase: Math.random() * 6 });
+      peopleMesh.setColorAt(k, _c.set(pick(Math.random, CLOTHES)));
+      headMesh.setColorAt(k, _c.set(pick(Math.random, SKIN)));
+      peopleMesh.instanceColor.needsUpdate = headMesh.instanceColor.needsUpdate = true;
+    }
+  } else if (walkers.length > target) walkers.pop();
+  const k = S.speed ? Math.min(3, S.speed) : 0;
+  walkers.forEach((w, n) => {
+    w.t += dt * w.v * k;
+    if (w.t >= 1 || S.tiles[w.to].t !== 'road') {
+      if (S.tiles[w.to].t !== 'road' || S.tiles[w.from].t !== 'road') { w.t = 1.01; return; }
+      const opts = roadNeighbours(w.to).filter((o) => o !== w.from && !WATER[o]);
+      w.from = w.to; w.to = opts.length ? pick(Math.random, opts) : w.from; w.t = 0;
+    }
+    const fx = W(w.from % N), fz = W((w.from / N) | 0), tx = W(w.to % N), tz = W((w.to / N) | 0);
+    const dx = tx - fx, dz = tz - fz, len = Math.hypot(dx, dz) || 1, off = 0.43 * w.side;
+    const bob = Math.abs(Math.sin((w.phase += dt * 9 * k))) * 0.01;
+    _m.compose(_v.set(fx + dx * w.t - (dz / len) * off, 0.045 + bob, fz + dz * w.t + (dx / len) * off), _q.setFromEuler(_e.set(0, Math.atan2(dx, dz), 0)), _s.set(1, 1, 1));
+    peopleMesh.setMatrixAt(n, _m); headMesh.setMatrixAt(n, _m);
+  });
+  peopleMesh.count = headMesh.count = walkers.length;
+  peopleMesh.instanceMatrix.needsUpdate = headMesh.instanceMatrix.needsUpdate = true;
 }
 
 const smokeTex = (() => {
@@ -1061,6 +1392,8 @@ function frame() {
   }
   for (const c of [...dirtyChunks].slice(0, dirtyChunks.size > 6 ? dirtyChunks.size : 3)) { dirtyChunks.delete(c); buildChunk(c); }
   updateCars(dt);
+  updatePeople(dt);
+  for (const h of rotors.values()) h.userData.rotor.rotation.z += dt * (S.speed ? 1.6 + S.speed * 0.4 : 0.4);
   updateSmoke(dt);
   updateRain(dt);
   updateLighting();
@@ -1098,5 +1431,6 @@ renderAdvisor();
 updateHud();
 placeTicker();
 news(D.pop ? `Bienvenido de nuevo a ${S.name}.` : 'Bienvenida, alcaldía. Empieza trazando una calle junto al río.');
-window.__urbania = { renderer, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
+if (!S.party) openModal('partyModal');
+window.__urbania = { renderer, election, LAWS, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
 frame();

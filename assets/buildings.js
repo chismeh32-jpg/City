@@ -308,7 +308,105 @@ export function serviceBuilding(b, s, r) {
       b.box(0.3, 0, 0.32, 0.26, 0.2, 0.22, 0xe9e1d0).add(GEO.gable, 0x5d6878, 0.3, 0.2, 0.32, 0.3, 0.1, 0.26);
       break;
     }
+    case 'coal': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, 0x8f897d);
+      b.box(0.1, 0, 0.12, 0.66, 0.42, 0.46, 0x6b4a3a).add(GEO.gable, 0x3b3f46, 0.1, 0.42, 0.12, 0.7, 0.16, 0.5);
+      b.windows(0.1, 0.12, 0.66, 0.46, 0.05, 1, 0.3, r, 0.5, 0x3b3f46);
+      for (const [x, z, h] of [[-0.3, -0.28, 1.75], [-0.05, -0.34, 1.55]]) {
+        b.add(GEO.cyl, 0x5b5b5b, x, 0, z, 0.16, h, 0.16).add(GEO.cyl, 0x3b3f46, x, h - 0.08, z, 0.17, 0.08, 0.17);
+        b.smoke.push([x, h + 0.05, z], [x, h + 0.05, z]);
+      }
+      b.add(GEO.pyramid, 0x2b2b2b, 0.32, 0, -0.3, 0.32, 0.18, 0.28);
+      break;
+    }
+    case 'solar': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
+      for (let k = 0; k < 4; k++) {
+        const z = -0.34 + k * 0.22;
+        b.box(-0.3, 0, z, 0.02, 0.08, 0.02, 0x8d949b).box(0.3, 0, z, 0.02, 0.08, 0.02, 0x8d949b);
+        b.box(0, 0.08, z - 0.03, 0.84, 0.025, 0.08, 0x2c4f7c).box(0, 0.1, z + 0.03, 0.84, 0.025, 0.08, 0x355d91);
+      }
+      b.box(0.4, 0, 0.42, 0.12, 0.12, 0.1, 0xe9e1d0);
+      break;
+    }
+    case 'wind': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
+      b.add(GEO.cyl, 0xf2f2ee, 0, 0, 0, 0.09, 0.8, 0.09).add(GEO.cyl, 0xf2f2ee, 0, 0.8, 0, 0.06, 0.8, 0.06);
+      b.box(0, 1.58, -0.04, 0.08, 0.08, 0.2, 0xe9e4da);
+      b.box(0.32, 0, 0.3, 0.16, 0.12, 0.12, 0xe9e1d0);
+      break;
+    }
+    case 'cityhall': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      b.box(0, 0, 0.36, 0.7, 0.04, 0.16, 0xd8d2c4).box(0, 0.04, 0.34, 0.6, 0.04, 0.12, 0xd8d2c4);
+      b.box(0, 0, -0.08, 0.92, 0.58, 0.56, 0xefe4cc).box(0, 0.58, -0.08, 0.95, 0.05, 0.59, 0xb8a98c);
+      b.add(GEO.gable, 0x9a5a3c, 0, 0.63, -0.08, 0.95, 0.16, 0.59);
+      b.windows(0, -0.08, 0.92, 0.56, 0, 2, 0.28, r, 0.6);
+      b.box(0, 0, -0.08, 0.24, 1.25, 0.24, 0xefe4cc).add(GEO.pyramid, 0x46614f, 0, 1.25, -0.08, 0.3, 0.32, 0.3);
+      b.add(GEO.cyl, 0xf8f6f0, 0, 0.98, 0.04 + 0.005, 0.14, 0.14, 0.02).box(0, 1.02, 0.05 + 0.006, 0.01, 0.05, 0.01, 0x2b2622);
+      b.box(0, 1.57, -0.08, 0.015, 0.3, 0.015, 0xcfcfcf).box(0.07, 1.78, -0.08, 0.12, 0.08, 0.01, 0xd33a2f);
+      break;
+    }
+    case 'plaza': {
+      b.box(0, 0, 0, 0.98, 0.025, 0.98, 0xe3d6bd);
+      b.box(0, 0.005, 0, 0.7, 0.025, 0.7, 0xd2c3a6);
+      b.add(GEO.cyl6, 0xbdb7aa, -0.2, 0, -0.2, 0.32, 0.06, 0.32).add(GEO.cyl6, 0x6fb3e0, -0.2, 0.06, -0.2, 0.26, 0.01, 0.26);
+      b.add(GEO.cyl6, 0xe9e4da, 0.22, 0.03, 0.2, 0.3, 0.04, 0.3);
+      for (const [x, z] of [[0.1, 0.07], [0.34, 0.07], [0.1, 0.33], [0.34, 0.33]]) b.box(x, 0.07, z, 0.015, 0.16, 0.015, 0x7a5638);
+      b.add(GEO.cone, 0xc0623f, 0.22, 0.23, 0.2, 0.36, 0.14, 0.36);
+      for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42]]) b.tree(x, z, 0.7);
+      b.box(-0.2, 0, 0.3, 0.16, 0.05, 0.04, 0x7a5638).box(0.3, 0, -0.25, 0.04, 0.05, 0.16, 0x7a5638);
+      break;
+    }
+    case 'zoo': {
+      b.box(0, 0, 0, 0.98, 0.025, 0.98, 0xa8c97a);
+      for (const s of [-1, 1]) b.box(s * 0.47, 0, 0, 0.02, 0.07, 0.96, 0x7a5638).box(0, 0, s * 0.47, 0.96, 0.07, 0.02, 0x7a5638);
+      b.box(0, 0.006, 0.05, 0.98, 0.022, 0.1, PATH).box(0.05, 0.006, 0, 0.1, 0.022, 0.98, PATH);
+      b.add(GEO.cyl, 0x5c9fd4, -0.26, 0.006, -0.28, 0.3, 0.022, 0.24);
+      // elephant
+      b.box(-0.24, 0.07, 0.26, 0.16, 0.1, 0.09, 0x8d949b).box(-0.13, 0.1, 0.26, 0.07, 0.08, 0.07, 0x8d949b);
+      for (const [x, z] of [[-0.3, 0.23], [-0.3, 0.29], [-0.18, 0.23], [-0.18, 0.29]]) b.box(x, 0, z, 0.03, 0.07, 0.03, 0x7d848b);
+      // giraffe
+      for (const [x, z] of [[0.24, -0.27], [0.24, -0.21], [0.33, -0.27], [0.33, -0.21]]) b.box(x, 0, z, 0.02, 0.12, 0.02, 0xd9a441);
+      b.box(0.285, 0.12, -0.24, 0.13, 0.06, 0.07, 0xe0b04f).box(0.34, 0.16, -0.24, 0.03, 0.18, 0.03, 0xe0b04f).box(0.36, 0.33, -0.24, 0.07, 0.04, 0.04, 0xe0b04f);
+      // lion rock and enclosure
+      b.add(GEO.ico, 0xb9ad99, 0.28, 0.05, 0.28, 0.2, 0.12, 0.16).box(0.24, 0.09, 0.33, 0.06, 0.04, 0.04, 0xd99a2b);
+      b.tree(-0.38, -0.05, 0.7).tree(0.4, 0.05, 0.6, 0x5d8f45).tree(-0.05, -0.38, 0.6);
+      b.box(0.05, 0, 0.47, 0.18, 0.2, 0.03, 0xd33a2f).box(0.05, 0.2, 0.47, 0.22, 0.04, 0.05, 0xf0cf60);
+      break;
+    }
+    case 'stadium': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      b.add(GEO.cyl, 0xd9d3c7, 0, 0, 0, 0.96, 0.24, 0.82).add(GEO.cyl, 0xc0392b, 0, 0, 0, 0.9, 0.3, 0.76);
+      b.add(GEO.cyl, 0xf2efe6, 0, 0.3, 0, 0.7, 0.006, 0.56).add(GEO.cyl, 0x5aa457, 0, 0.3, 0, 0.64, 0.012, 0.5);
+      b.box(0, 0.312, 0, 0.006, 0.002, 0.46, 0xf4efe4).add(GEO.cyl, 0xf4efe4, 0, 0.311, 0, 0.12, 0.002, 0.12);
+      for (const [x, z] of [[-0.44, -0.4], [0.44, -0.4], [-0.44, 0.4], [0.44, 0.4]]) b.box(x, 0, z, 0.025, 0.62, 0.025, 0x6f7780).box(x, 0.62, z, 0.09, 0.05, 0.03, 0xfff2c4, 1);
+      break;
+    }
+    case 'museum': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      for (let k = 0; k < 3; k++) b.box(0, k * 0.03, 0.06 - k * 0.03, 0.86 - k * 0.04, 0.03, 0.74 - k * 0.06, 0xe4dccb);
+      b.box(0, 0.09, -0.1, 0.72, 0.42, 0.44, 0xf2ede2);
+      for (let k = 0; k < 6; k++) b.add(GEO.cyl, 0xf8f6f0, -0.3 + k * 0.12, 0.09, 0.2, 0.05, 0.36, 0.05);
+      b.box(0, 0.45, 0.05, 0.78, 0.05, 0.36, 0xe4dccb).add(GEO.gable, 0xe9e1d0, 0, 0.5, 0.05, 0.8, 0.14, 0.38);
+      b.box(0, 0.45, -0.3, 0.3, 0.12, 0.2, 0x9fc6db, 1);
+      break;
+    }
   }
+}
+
+// Wind turbine rotor, animated separately from the merged chunk meshes.
+const bladeMat = new THREE.MeshStandardMaterial({ color: 0xf8f6f0, roughness: 0.7, flatShading: true });
+export function windRotor() {
+  const group = new THREE.Group();
+  for (let k = 0; k < 3; k++) {
+    const blade = new THREE.Mesh(GEO.box, bladeMat);
+    blade.scale.set(0.035, 0.5, 0.012);
+    blade.rotation.z = (k * Math.PI * 2) / 3;
+    blade.castShadow = true;
+    group.add(blade);
+  }
+  return group;
 }
 
 function car(b, x, z, body, top, len = 1) {

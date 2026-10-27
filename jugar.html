@@ -18,7 +18,7 @@
   <header class="topbar">
     <button class="pill brand" id="menuBtn" aria-haspopup="true">🏙️ <span id="cityName">Villanueva</span></button>
     <div class="pill">
-      <div class="stat"><span class="ic">👥</span><div><b id="sPop">0</b><small>habitantes</small></div></div>
+      <button class="stat" id="openCitizens" title="Ciudadanos"><span class="ic">👥</span><div><b id="sPop">0</b><small>habitantes</small></div></button>
       <div class="stat"><span class="ic">💰</span><div><b id="sMoney">0 €</b><small id="sDelta">+0 al día</small></div></div>
       <button class="stat" id="openApproval" title="Índice de aprobación"><span class="ic">❤️</span><div><b id="sApproval">0 %</b><small>aprobación</small></div></button>
       <div class="stat"><span class="ic">🕒</span><div><b id="sClock">07:00</b><small id="sDay">día 1 · mañana</small></div></div>
@@ -34,6 +34,7 @@
       <div class="stat" title="Electricidad: consumo / capacidad"><span class="ic">⚡</span><div><b id="sPower">0/0</b><small>luz</small></div></div>
       <div class="stat" title="Agua: consumo / capacidad"><span class="ic">💧</span><div><b id="sWater">0/0</b><small>agua</small></div></div>
       <div class="stat" title="Empleos ocupados / empleos"><span class="ic">💼</span><div><b id="sJobs">0/0</b><small>empleo</small></div></div>
+      <button class="stat" id="openPolitics" title="Política: partido, leyes y elecciones"><span class="ic">🗳️</span><div><b id="sVote">Política</b><small id="sElection">leyes y elecciones</small></div></button>
       <button class="stat" id="openBudget" title="Presupuesto"><span class="ic">📊</span><div><b>Presupuesto</b><small>impuestos y fondos</small></div></button>
     </div>
   </header>
@@ -86,11 +87,13 @@
         <div class="panel">
           <h3 style="margin-top:4px">🏷️ Impuestos</h3>
           <div id="taxRows"></div>
+          <div class="slider"><label>📸 Turismo</label><span></span><span></span><span id="bTourism"></span></div>
           <p class="note">Una tasa más alta da más fondos, pero frena el crecimiento. Por encima del 14 % la gente se enfada.</p>
         </div>
         <div class="panel">
           <h3 style="margin-top:4px">🏛️ Servicios: fondos</h3>
           <div id="fundRows"></div>
+          <div class="slider"><label>📜 Leyes en vigor</label><span></span><span></span><span id="bLaws"></span></div>
           <p class="note">Por debajo del 100 % sale más barato, pero el servicio llega menos lejos. Por debajo del 70 % los vecinos protestan.</p>
         </div>
       </div>
@@ -98,6 +101,61 @@
         <div><b>🏦 Préstamo</b><br><small class="note" id="loanText"></small></div>
         <button class="btn primary" id="loanBtn">Pedir 25.000 €</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal" id="partyModal" role="dialog" aria-modal="true" aria-labelledby="ptTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="ptTitle">🗳️ ¿Con qué partido te presentas?</h2>
+      <p class="note" style="margin:0 0 12px">Tu partido cambia lo que esperan de ti los vecinos y qué leyes les gustan.</p>
+      <div class="parties" id="partyCards"></div>
+      <p class="note" id="partyNote"></p>
+    </div>
+  </div>
+
+  <div class="modal wide" id="politicsModal" role="dialog" aria-modal="true" aria-labelledby="poTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="poTitle">🏛️ Política</h2>
+      <div class="sum">
+        <div class="party-mini"><div id="polParty"></div><button class="btn" id="polChangeParty" style="margin-top:8px">Cambiar de partido</button></div>
+        <div><small>Intención de voto</small><b id="polVote">0 %</b><small>necesitas un 50 % · elecciones <span id="polDays"></span></small></div>
+        <div><small>Qué votan tus vecinos</small><b style="font-size:1rem" id="polLean"></b><div class="lean-bar" id="polLeanBar"><i></i></div></div>
+      </div>
+      <h3>📜 Leyes municipales</h3>
+      <p class="note" id="lawWarn">⚠️ Necesitas un <b>Ayuntamiento</b> (en Servicios) para aprobar leyes.</p>
+      <p class="note">Aprobar una ley cuesta 1.000 € de trámites; derogarla es gratis. Las leyes de tu cuerda gustan a tus votantes y las del contrario les molestan.</p>
+      <div class="laws" id="lawList"></div>
+      <h3>🗳️ Elecciones anteriores</h3>
+      <ul class="rows" id="polHistory"></ul>
+    </div>
+  </div>
+
+  <div class="modal" id="electionModal" role="dialog" aria-modal="true" aria-labelledby="elTitle">
+    <div class="card">
+      <h2 id="elTitle"></h2>
+      <p id="elText"></p>
+      <div id="elBars"></div>
+      <div class="row-actions" id="elActions"></div>
+    </div>
+  </div>
+
+  <div class="modal wide" id="citizensModal" role="dialog" aria-modal="true" aria-labelledby="ctTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="ctTitle">👥 Ciudadanos</h2>
+      <div class="sum">
+        <div><small>Habitantes</small><b id="ctPop">0</b></div>
+        <div class="ok"><small>Con trabajo</small><b id="ctJobs">0</b></div>
+        <div><small>En paro</small><b id="ctUnemp">0</b></div>
+      </div>
+      <div class="cols" style="margin-top:14px">
+        <div class="panel"><h3 style="margin-top:4px">Edades</h3><div id="ctAges"></div></div>
+        <div class="panel"><h3 style="margin-top:4px">Ideología</h3><div id="ctLean"></div></div>
+      </div>
+      <h3>💬 Qué dicen los vecinos</h3>
+      <ul class="rows" id="ctQuotes"></ul>
     </div>
   </div>
 
