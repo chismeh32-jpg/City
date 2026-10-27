@@ -6,40 +6,35 @@
   <title>Estilos — Urbania</title>
   <meta name="description" content="Nueve personalidades para tu ciudad.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body data-page="styles">
   <main class="wrap">
     <header class="page-head">
       <h1>Estilos</h1>
-      <p class="muted">Nueve personalidades para tu ciudad. Cambia de estilo cuando quieras: la arquitectura, los colores y el ambiente cambian con él.</p>
+      <p class="muted">Nueve personalidades para tu ciudad. Cámbialo cuando quieras desde el menú 🏙️ del juego: toda la ciudad se redibuja con otros colores y otros tejados.</p>
     </header>
     <div class="grid grid-3" id="styles" style="padding-bottom:80px"></div>
   </main>
   <script src="assets/site.js"></script>
   <script>
     const STYLES = [
-      ["Clásico", "Fachadas de piedra, cornisas y avenidas arboladas.", ["#c9b79c", "#8a6f52", "#3d4a3a"]],
-      ["Moderno", "Cristal, hormigón y líneas limpias.", ["#d7e1ea", "#7d8fa3", "#2b3644"]],
-      ["Mediterráneo", "Casas blancas, tejas rojas y plazas soleadas.", ["#f4efe6", "#d9774b", "#2f7fb3"]],
-      ["Nórdico", "Madera, tejados a dos aguas y colores pastel.", ["#e9d8c4", "#a5c4d4", "#c45d4a"]],
-      ["Futurista", "Torres de neón, monorraíles y cúpulas.", ["#5ee6b0", "#6ea8ff", "#1a1f3d"]],
-      ["Tropical", "Palmeras, colores vivos y paseos marítimos.", ["#ffd166", "#06d6a0", "#ef476f"]],
-      ["Industrial", "Ladrillo visto, chimeneas y naves reconvertidas.", ["#a4553a", "#5b5b5b", "#2b2b2b"]],
-      ["Oriental", "Pagodas, jardines zen y farolillos.", ["#c0392b", "#f2c14e", "#1f2d3d"]],
-      ["Colonial", "Soportales, patios interiores y balcones de hierro.", ["#f0c987", "#4e8f6e", "#6b3e26"]],
+      ["clasico", "Clásico", "Fachadas de piedra y ladrillo, tejados a dos aguas y chimeneas.", ["#f4ead8", "#b65a42", "#b5483b", "#5d6878"]],
+      ["moderno", "Moderno", "Cubiertas planas, blancos y grises, líneas limpias.", ["#f2f2ee", "#bfc4c8", "#3b3f46", "#8fb7cf"]],
+      ["mediterraneo", "Mediterráneo", "Casas encaladas con tejados de teja a cuatro aguas.", ["#faf6ee", "#f1dcc0", "#c8643f", "#5c9fd4"]],
+      ["nordico", "Nórdico", "Madera pintada de rojo, mostaza y azul con tejados oscuros.", ["#c94f3a", "#e0a83a", "#a5c4d4", "#2f3b4c"]],
+      ["futurista", "Futurista", "Tonos menta y lavanda, azoteas de colores y mucho cristal.", ["#e8f4f2", "#b9f0d8", "#5ee6b0", "#b28cff"]],
+      ["tropical", "Tropical", "Colores vivos y tejados de madera para un verano eterno.", ["#ffd166", "#06d6a0", "#ef476f", "#7a5638"]],
+      ["industrial", "Industrial", "Ladrillo visto, hormigón y tejados metálicos.", ["#a4553a", "#6b6b6b", "#b38b6d", "#2b2b2b"]],
+      ["oriental", "Oriental", "Lacados rojos, maderas claras y tejados a cuatro aguas.", ["#f4ead8", "#c0392b", "#1f2d3d", "#2f5f4f"]],
+      ["colonial", "Colonial", "Ocres suaves y tejados de barro, como en una plaza antigua.", ["#f0c987", "#e8b98a", "#6b3e26", "#4e8f6e"]],
     ];
-    document.getElementById("styles").innerHTML = STYLES.map(([name, desc, [a, b, c]], i) => `
+    document.getElementById("styles").innerHTML = STYLES.map(([id, name, desc, sw]) => `
       <article class="card style-card">
-        <svg class="swatch" viewBox="0 0 300 120" preserveAspectRatio="none" aria-hidden="true">
-          <rect width="300" height="120" fill="${c}"/>
-          <rect x="20" y="${50 - i * 2}" width="60" height="${70 + i * 2}" fill="${a}"/>
-          <rect x="90" y="30" width="45" height="90" fill="${b}"/>
-          <rect x="145" y="${60 - i * 3}" width="70" height="${60 + i * 3}" fill="${a}" opacity=".85"/>
-          <rect x="225" y="45" width="55" height="75" fill="${b}" opacity=".9"/>
-        </svg>
-        <div class="body"><h3>${name}</h3><p>${desc}</p></div>
+        <img src="assets/img/styles/${id}.jpg" width="480" height="300" alt="Barrio de Urbania en estilo ${name.toLowerCase()}" loading="lazy">
+        <div class="body"><h3>${name}</h3><p>${desc}</p>
+          <div class="swatches">${sw.map((c) => `<i style="background:${c}"></i>`).join("")}</div></div>
       </article>`).join("");
   </script>
 </body>

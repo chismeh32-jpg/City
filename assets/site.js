@@ -8,9 +8,10 @@
     ["estilos.html", "Estilos", "styles"],
   ];
   const logo = `<svg class="logo-mark" viewBox="0 0 32 32" aria-hidden="true">
-    <rect x="3" y="14" width="7" height="15" rx="1" fill="#6ea8ff"/>
-    <rect x="12" y="5" width="8" height="24" rx="1" fill="#5ee6b0"/>
-    <rect x="22" y="10" width="7" height="19" rx="1" fill="#ffb86b"/></svg>`;
+    <rect x="3" y="14" width="8" height="15" rx="1.5" fill="#fbf7ee" stroke="#2b2622" stroke-width="1.6"/>
+    <path d="M2 15 7 9l5 6z" fill="#e4553b" stroke="#2b2622" stroke-width="1.6" stroke-linejoin="round"/>
+    <rect x="13" y="6" width="8" height="23" rx="1.5" fill="#86c96a" stroke="#2b2622" stroke-width="1.6"/>
+    <rect x="23" y="12" width="7" height="17" rx="1.5" fill="#6aaeea" stroke="#2b2622" stroke-width="1.6"/></svg>`;
 
   const header = document.createElement("header");
   header.className = "site-header";
@@ -20,8 +21,7 @@
     <ul class="nav-links">${links
       .map(([href, label, id]) => `<li><a href="${href}"${id === page ? ' aria-current="page"' : ""}>${label}</a></li>`)
       .join("")}</ul>
-    <span class="lang" title="Idioma">ES</span>
-    <a class="btn btn-primary btn-sm" href="jugar.html">Jugar gratis</a>
+    <a class="btn btn-primary btn-sm" href="jugar.html">▶ Jugar gratis</a>
   </nav>`;
   document.body.prepend(header);
 
@@ -37,7 +37,7 @@
     <a class="logo" href="index.html">${logo}Urbania</a>
     <ul>${links.map(([href, label]) => `<li><a href="${href}">${label}</a></li>`).join("")}
       <li><a href="jugar.html">Jugar</a></li></ul>
-    <span>© ${new Date().getFullYear()} Urbania. Gratis para siempre.</span>
+    <span>© ${new Date().getFullYear()} Urbania · Gratis, sin descargas.</span>
   </div>`;
   document.body.append(footer);
 })();

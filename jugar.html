@@ -2,39 +2,105 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Jugar — Urbania</title>
-  <meta name="description" content="Construye tu ciudad en el navegador.">
+  <meta name="description" content="Construye tu ciudad en 3D directamente en el navegador.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/game.css">
+  <script type="importmap">
+    { "imports": { "three": "./assets/vendor/three.module.min.js", "three/addons/": "./assets/vendor/addons/" } }
+  </script>
 </head>
-<body data-page="play">
-  <main class="wrap">
-    <div class="game">
-      <aside class="panel">
-        <h3>Herramientas</h3>
-        <div class="tools" id="tools"></div>
-        <p class="muted" style="font-size:.8rem;margin-top:12px">Clic o arrastra para construir. Clic derecho o <kbd>B</kbd> para demoler. <kbd>Espacio</kbd> pausa.</p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" id="pause">⏸ Pausa</button>
-          <button class="btn btn-ghost btn-sm" id="reset">Nueva ciudad</button>
+<body>
+  <div id="view"></div>
+
+  <header class="topbar">
+    <button class="pill brand" id="menuBtn" aria-haspopup="true">🏙️ <span id="cityName">Villanueva</span></button>
+    <div class="pill">
+      <div class="stat"><span class="ic">👥</span><div><b id="sPop">0</b><small>habitantes</small></div></div>
+      <div class="stat"><span class="ic">💰</span><div><b id="sMoney">0 €</b><small id="sDelta">+0 al día</small></div></div>
+      <button class="stat" id="openApproval" title="Índice de aprobación"><span class="ic">❤️</span><div><b id="sApproval">0 %</b><small>aprobación</small></div></button>
+      <div class="stat"><span class="ic">🕒</span><div><b id="sClock">07:00</b><small id="sDay">día 1 · mañana</small></div></div>
+    </div>
+    <div class="pill speeds" role="group" aria-label="Velocidad del tiempo">
+      <button data-speed="0" title="Pausa (Espacio)">⏸</button>
+      <button data-speed="1" title="Normal">▶</button>
+      <button data-speed="2" title="Rápido">⏩</button>
+      <button data-speed="3" title="Muy rápido">⏭</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="pill">
+      <div class="stat" title="Electricidad: consumo / capacidad"><span class="ic">⚡</span><div><b id="sPower">0/0</b><small>luz</small></div></div>
+      <div class="stat" title="Agua: consumo / capacidad"><span class="ic">💧</span><div><b id="sWater">0/0</b><small>agua</small></div></div>
+      <div class="stat" title="Empleos ocupados / empleos"><span class="ic">💼</span><div><b id="sJobs">0/0</b><small>empleo</small></div></div>
+      <button class="stat" id="openBudget" title="Presupuesto"><span class="ic">📊</span><div><b>Presupuesto</b><small>impuestos y fondos</small></div></button>
+    </div>
+  </header>
+
+  <nav class="card menu" id="menu">
+    <a href="index.html">🏠 Volver al inicio</a>
+    <a href="como-jugar.html">❓ Cómo jugar</a>
+    <button id="renameCity">✏️ Cambiar nombre</button>
+    <label class="menu-row">🎨 Estilo <select id="styleSel" aria-label="Estilo de ciudad"></select></label>
+    <button id="newCity">🗑️ Nueva ciudad</button>
+  </nav>
+
+  <div class="ticker" aria-live="polite"><span class="tag" id="tickerTag">NOTICIAS</span><span id="tickerText">Bienvenida, alcaldesa o alcalde.</span></div>
+
+  <aside class="card advisor" id="advisor">
+    <button class="close" id="advisorClose" aria-label="Cerrar">✕</button>
+    <div class="who">Doña Carmen · secretaria del ayuntamiento</div>
+    <h4 id="advTitle"></h4>
+    <p id="advText"></p>
+    <div class="row" id="advActions"></div>
+  </aside>
+
+  <div class="tooltip" id="tooltip"></div>
+  <div class="card subtools" id="subtools"></div>
+  <nav class="card toolbar" id="toolbar" aria-label="Herramientas"></nav>
+
+  <div class="modal" id="approvalModal" role="dialog" aria-modal="true" aria-labelledby="apTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="apTitle">❤️ Índice de aprobación</h2>
+      <div class="big"><b id="apVal">0 %</b><span id="apTrend"></span></div>
+      <div class="meter"><div class="mark" id="apMark"></div></div>
+      <h3 id="apGoalTitle">Cómo se forma la meta</h3>
+      <ul class="rows" id="apRows"></ul>
+      <p style="margin-top:14px"><button class="btn" id="apToBudget">📊 Presupuesto</button></p>
+      <p class="note">La aprobación avanza hacia la meta unos pocos puntos por hora. Los servicios solo cuentan para las casas que quedan dentro de su radio.</p>
+    </div>
+  </div>
+
+  <div class="modal wide" id="budgetModal" role="dialog" aria-modal="true" aria-labelledby="bdTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="bdTitle">📊 Presupuesto municipal</h2>
+      <div class="sum">
+        <div><small>Ingresos diarios</small><b id="bIncome" class="pos">+0</b></div>
+        <div><small>Gastos diarios</small><b id="bExpense" class="negc">-0</b></div>
+        <div id="bBalanceBox"><small>Saldo diario</small><b id="bBalance">0</b><small id="bBalanceNote"></small></div>
+      </div>
+      <div class="cols" style="margin-top:14px">
+        <div class="panel">
+          <h3 style="margin-top:4px">🏷️ Impuestos</h3>
+          <div id="taxRows"></div>
+          <p class="note">Una tasa más alta da más fondos, pero frena el crecimiento. Por encima del 14 % la gente se enfada.</p>
         </div>
-      </aside>
-      <div>
-        <div class="hud">
-          <div><small>Dinero</small><b id="money"></b></div>
-          <div><small>Población</small><b id="pop"></b></div>
-          <div><small>Empleo</small><b id="jobs"></b></div>
-          <div><small>Felicidad</small><b id="happy"></b></div>
-          <div><small>Mes</small><b id="month"></b></div>
+        <div class="panel">
+          <h3 style="margin-top:4px">🏛️ Servicios: fondos</h3>
+          <div id="fundRows"></div>
+          <p class="note">Por debajo del 100 % sale más barato, pero el servicio llega menos lejos. Por debajo del 70 % los vecinos protestan.</p>
         </div>
-        <canvas id="board" width="960" height="600" aria-label="Mapa de la ciudad"></canvas>
-        <p class="log" id="log" aria-live="polite"></p>
+      </div>
+      <div class="panel" style="margin-top:14px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+        <div><b>🏦 Préstamo</b><br><small class="note" id="loanText"></small></div>
+        <button class="btn primary" id="loanBtn">Pedir 25.000 €</button>
       </div>
     </div>
-  </main>
-  <script src="assets/site.js"></script>
-  <script src="assets/game.js"></script>
+  </div>
+
+  <script type="module" src="assets/game3d.js"></script>
 </body>
 </html>

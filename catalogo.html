@@ -4,85 +4,61 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Catálogo de edificios — Urbania</title>
-  <meta name="description" content="Más de 600 casas, parques y torres.">
+  <meta name="description" content="Casas, comercios, oficinas, industria y servicios públicos de Urbania.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body data-page="catalog">
   <main class="wrap">
     <header class="page-head">
       <h1>Catálogo de edificios</h1>
-      <p class="muted">Más de 600 casas, parques y torres.</p>
+      <p class="muted">Todos los modelos salen del propio juego. Cada vez que se construye uno, cambian sus colores y detalles, así que estos son solo algunos ejemplos.</p>
     </header>
-    <div class="toolbar" role="toolbar" aria-label="Filtros">
+    <div class="toolbar">
       <input class="search" type="search" placeholder="Buscar edificio…" aria-label="Buscar">
       <span class="count" aria-live="polite"></span>
     </div>
-    <div class="toolbar" id="chips"></div>
-    <div class="items" id="items"></div>
-    <p style="text-align:center;margin:32px 0 80px"><button class="btn btn-ghost" id="more">Mostrar más</button></p>
+    <div class="toolbar" id="chips" role="toolbar" aria-label="Filtrar por tipo"></div>
+    <div class="items" id="items" style="padding-bottom:80px"></div>
   </main>
   <script src="assets/site.js"></script>
   <script>
-    const CATS = {
-      Viviendas: { color: "#6ea8ff", names: ["Casa", "Chalet", "Adosado", "Bloque", "Apartamentos", "Loft", "Cabaña", "Villa"], h: [30, 60] },
-      Comercio: { color: "#ffb86b", names: ["Tienda", "Mercado", "Café", "Centro comercial", "Panadería", "Librería", "Restaurante"], h: [30, 55] },
-      Oficinas: { color: "#b28cff", names: ["Torre", "Rascacielos", "Edificio de oficinas", "Sede", "Coworking"], h: [60, 95] },
-      Industria: { color: "#ff7a8a", names: ["Fábrica", "Almacén", "Taller", "Planta solar", "Puerto de carga"], h: [30, 50] },
-      Servicios: { color: "#5ee6b0", names: ["Escuela", "Hospital", "Bomberos", "Comisaría", "Biblioteca", "Universidad", "Ayuntamiento"], h: [35, 65] },
-      Parques: { color: "#7bd36b", names: ["Parque", "Jardín", "Plaza", "Lago", "Bosque urbano", "Parque infantil"], h: [10, 25] },
-      Ocio: { color: "#ffd166", names: ["Estadio", "Cine", "Museo", "Teatro", "Piscina", "Noria"], h: [35, 70] },
+    const ZONES = {
+      res: { label: "Vivienda", color: "#86c96a", names: ["Casa", "Casa grande", "Edificio de viviendas"], unit: "habitantes", cap: [6, 16, 40] },
+      com: { label: "Comercio", color: "#6aaeea", names: ["Tienda", "Comercio", "Galerías"], unit: "empleos", cap: [6, 14, 30] },
+      off: { label: "Oficinas", color: "#a58cef", names: ["Oficinas", "Edificio de oficinas", "Torre de oficinas"], unit: "empleos", cap: [10, 26, 60] },
+      ind: { label: "Industria", color: "#eec05a", names: ["Taller", "Fábrica", "Complejo industrial"], unit: "empleos", cap: [12, 24, 40] },
     };
-    const STYLES = ["Clásico", "Moderno", "Mediterráneo", "Nórdico", "Futurista", "Tropical", "Industrial", "Oriental", "Colonial"];
-
-    // Deterministic pseudo-random so the catalog is the same on every visit.
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-
+    const SERVICES = [
+      ["police", "Comisaría", "Radio de 9 casillas · 600 € al día"], ["fire", "Bomberos", "Radio de 9 casillas · 650 € al día"],
+      ["health", "Centro de salud", "Radio de 9 casillas · 900 € al día"], ["school", "Escuela", "Radio de 9 casillas · 800 € al día"],
+      ["park", "Parque", "Radio de 5 casillas · 60 € al día"], ["power", "Central eléctrica", "140 ⚡ · 500 € al día"], ["water", "Torre de agua", "140 💧 · 300 € al día"],
+    ];
     const items = [];
-    for (const [cat, def] of Object.entries(CATS))
-      for (const name of def.names)
-        for (const style of STYLES)
-          for (const size of ["", " grande"]) {
-            const r = rnd(), k = size ? 1.6 : 1;
-            items.push({ cat, style, name: `${name}${size} · ${style}`, color: def.color,
-              h: Math.min(98, (def.h[0] + r * (def.h[1] - def.h[0])) * (size ? 1.25 : 1)), w: (30 + rnd() * 40) * (size ? 1.3 : 1),
-              cost: Math.round(((def.h[0] * 40 + r * 4000) * k) / 50) * 50 });
-          }
-
-    const thumb = (it) => {
-      const x = 100 - it.w / 2, y = 100 - it.h;
-      const win = [];
-      for (let wy = y + 8; wy < 92; wy += 12)
-        for (let wx = x + 6; wx < x + it.w - 6; wx += 10) win.push(`<rect x="${wx}" y="${wy}" width="4" height="5" fill="#fff" opacity=".35"/>`);
-      const park = it.cat === "Parques"
-        ? `<circle cx="80" cy="82" r="12" fill="${it.color}"/><circle cx="118" cy="78" r="15" fill="${it.color}" opacity=".8"/>`
-        : `<rect x="${x}" y="${y}" width="${it.w}" height="${it.h}" rx="2" fill="${it.color}"/>${win.join("")}`;
-      return `<svg viewBox="0 0 200 110" aria-hidden="true"><rect y="100" width="200" height="10" fill="#22305a"/>${park}</svg>`;
-    };
+    for (const [z, Z] of Object.entries(ZONES))
+      for (let lv = 1; lv <= 3; lv++)
+        for (let k = 0; k < 4; k++)
+          items.push({ cat: Z.label, color: Z.color, name: Z.names[lv - 1], img: `assets/img/catalog/${z}-${lv}-${k}.jpg`, info: `Nivel ${lv} · ${Z.cap[lv - 1]} ${Z.unit}` });
+    for (const [id, name, info] of SERVICES) items.push({ cat: "Servicios", color: "#e4553b", name, img: `assets/img/catalog/svc-${id}.jpg`, info });
 
     const list = document.getElementById("items"), search = document.querySelector(".search"),
-          count = document.querySelector(".count"), more = document.getElementById("more"), chips = document.getElementById("chips");
-    let cat = "Todos", limit = 48;
-
-    ["Todos", ...Object.keys(CATS)].forEach((c) => {
+          count = document.querySelector(".count"), chips = document.getElementById("chips");
+    let cat = "Todos";
+    ["Todos", ...Object.values(ZONES).map((z) => z.label), "Servicios"].forEach((c) => {
       const b = document.createElement("button");
       b.className = "chip"; b.textContent = c; b.setAttribute("aria-pressed", c === cat);
-      b.onclick = () => { cat = c; limit = 48; chips.querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", x === b)); render(); };
+      b.onclick = () => { cat = c; chips.querySelectorAll(".chip").forEach((x) => x.setAttribute("aria-pressed", x === b)); render(); };
       chips.append(b);
     });
-
     function render() {
       const q = search.value.trim().toLowerCase();
-      const found = items.filter((it) => (cat === "Todos" || it.cat === cat) && it.name.toLowerCase().includes(q));
-      count.textContent = `${found.length} edificios`;
-      list.innerHTML = found.slice(0, limit).map((it) =>
-        `<article class="item">${thumb(it)}<div><b>${it.name}</b><small>${it.cat} · ${it.cost.toLocaleString("es")} €</small></div></article>`).join("");
-      more.hidden = found.length <= limit;
+      const found = items.filter((it) => (cat === "Todos" || it.cat === cat) && (it.name + " " + it.cat).toLowerCase().includes(q));
+      count.textContent = `${found.length} modelos`;
+      list.innerHTML = found.map((it) => `<article class="item"><img src="${it.img}" width="360" height="270" alt="${it.name}" loading="lazy">
+        <div><span class="tag" style="background:${it.color}">${it.cat}</span><b>${it.name}</b><small>${it.info}</small></div></article>`).join("");
     }
-    search.oninput = () => { limit = 48; render(); };
-    more.onclick = () => { limit += 48; render(); };
+    search.oninput = render;
     render();
   </script>
 </body>
