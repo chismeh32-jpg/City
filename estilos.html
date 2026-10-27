@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Estilos — Urbania</title>
+  <meta name="description" content="Nueve personalidades para tu ciudad.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="styles">
+  <main class="wrap">
+    <header class="page-head">
+      <h1>Estilos</h1>
+      <p class="muted">Nueve personalidades para tu ciudad. Cambia de estilo cuando quieras: la arquitectura, los colores y el ambiente cambian con él.</p>
+    </header>
+    <div class="grid grid-3" id="styles" style="padding-bottom:80px"></div>
+  </main>
+  <script src="assets/site.js"></script>
+  <script>
+    const STYLES = [
+      ["Clásico", "Fachadas de piedra, cornisas y avenidas arboladas.", ["#c9b79c", "#8a6f52", "#3d4a3a"]],
+      ["Moderno", "Cristal, hormigón y líneas limpias.", ["#d7e1ea", "#7d8fa3", "#2b3644"]],
+      ["Mediterráneo", "Casas blancas, tejas rojas y plazas soleadas.", ["#f4efe6", "#d9774b", "#2f7fb3"]],
+      ["Nórdico", "Madera, tejados a dos aguas y colores pastel.", ["#e9d8c4", "#a5c4d4", "#c45d4a"]],
+      ["Futurista", "Torres de neón, monorraíles y cúpulas.", ["#5ee6b0", "#6ea8ff", "#1a1f3d"]],
+      ["Tropical", "Palmeras, colores vivos y paseos marítimos.", ["#ffd166", "#06d6a0", "#ef476f"]],
+      ["Industrial", "Ladrillo visto, chimeneas y naves reconvertidas.", ["#a4553a", "#5b5b5b", "#2b2b2b"]],
+      ["Oriental", "Pagodas, jardines zen y farolillos.", ["#c0392b", "#f2c14e", "#1f2d3d"]],
+      ["Colonial", "Soportales, patios interiores y balcones de hierro.", ["#f0c987", "#4e8f6e", "#6b3e26"]],
+    ];
+    document.getElementById("styles").innerHTML = STYLES.map(([name, desc, [a, b, c]], i) => `
+      <article class="card style-card">
+        <svg class="swatch" viewBox="0 0 300 120" preserveAspectRatio="none" aria-hidden="true">
+          <rect width="300" height="120" fill="${c}"/>
+          <rect x="20" y="${50 - i * 2}" width="60" height="${70 + i * 2}" fill="${a}"/>
+          <rect x="90" y="30" width="45" height="90" fill="${b}"/>
+          <rect x="145" y="${60 - i * 3}" width="70" height="${60 + i * 3}" fill="${a}" opacity=".85"/>
+          <rect x="225" y="45" width="55" height="75" fill="${b}" opacity=".9"/>
+        </svg>
+        <div class="body"><h3>${name}</h3><p>${desc}</p></div>
+      </article>`).join("");
+  </script>
+</body>
+</html>
