@@ -1,13 +1,13 @@
 // Urbania — the interface: news, tutorial, tools and input, HUD, panels, politics, citizens and menu.
 import * as THREE from 'three';
 import { rng, pick, STYLES, setStyle } from './buildings.js';
-import { $, CATEGORIES, ELECTION_EVERY, FUNDS, HALF, I, LAWS, LAW_BY_ID, LAW_FEE, N, NAMES, PARTIES, RANKS, SERVICES, UNLOCK, W, WATER, ZONES, _m, clamp, el, fmt, ic, inside, money, news, signed } from './config.js';
+import { $, CATEGORIES, ELECTION_EVERY, FUNDS, HALF, I, LAWS, LAW_BY_ID, LAW_FEE, N, NAMES, PARTIES, RANKS, SERVICES, UNLOCK, W, WATER, ZONES, _m, clamp, el, fmt, ic, inside, money, news, signed, PLOT, PLOTS, PLOTS_FOR_RANK, plotOf, plotPrice } from './config.js';
 import { S, fromSave, newState, save, setState } from './state.js';
 import { GFX_KEY, GFX_LEVELS, applyGfx, camera, controls, gfx, perfVisible, renderer, scene, setPerfVisible } from './scene.js';
-import { chunks, cursor, dirtyChunks, rebuildAll, refreshAround, refreshTile } from './world.js';
+import { chunks, cursor, dirtyChunks, drawPlots, rebuildAll, refreshAround, refreshTile } from './world.js';
 import { D, buildCost, isLocked, law, nearRoad, party, radiusOf, refresh, upkeepOf } from './sim.js';
 import { sfx } from './audio.js';
-import { LAYERS, currentLayer, restoreLayer, setLayer, showRange } from './layers.js';
+import { LAYERS, currentLayer, layerFor, restoreLayer, setLayer, showRange } from './layers.js';
 import { bar, closeInspector, inspect, renderInspector, renderStats, takePhoto, togglePhotoMode, toggleSound } from './panels.js';
 import { agents, fireworks, markFires, trafficLabel, walkers } from './life.js';
 
@@ -30,6 +30,8 @@ function hourlyNews(d) {
   if (d.pop > 40 && d.cov.health < 0.5 && warn('health', 'Los vecinos piden un centro de salud más cerca.', 12)) return;
   if (d.pop > 40 && d.cov.school < 0.5 && warn('school', 'Las familias quieren una escuela en su barrio.', 12)) return;
   if (d.smoke > 0.3 && warn('smoke', 'El humo de las fábricas llega a las casas. Separa la industria.', 12)) return;
+  if (d.trashUse > d.trashCap && warn('trash', 'La basura se acumula en las calles: construye un vertedero en "Energía, agua y basura".', 24)) return;
+  if (!d.connected && d.pop > 250 && warn('hw', 'Conecta tu ciudad con la autopista del oeste: llegarán turistas y la industria podrá vender fuera.', 36)) return;
   if (d.pop > 150 && !d.svc.cityhall && warn('hall', 'Sin ayuntamiento no puedes aprobar leyes. Búscalo en "Servicios".', 24)) return;
   if (d.pop > 250 && d.cov.leisure < 0.3 && warn('fun', 'Los vecinos se aburren: piden una plaza, un museo o un zoológico.', 24)) return;
 }
@@ -127,7 +129,7 @@ function selectTool(id) {
   if (id !== 'look') layerPanel = false;
   // placing a service shows where it would reach; other tools bring back the player's layer
   const def = tool.svc && SERVICES[tool.svc];
-  if (def && def.radius) setLayer(def.leisure ? 'cov:leisure' : `cov:${tool.svc}`, true);
+  if (def && def.radius) setLayer(layerFor(tool.svc), true);
   else restoreLayer();
   showRange(0, 0, 0);
   controls.mouseButtons.LEFT = tool.id === 'look' ? THREE.MOUSE.PAN : -1;
@@ -153,6 +155,12 @@ function pathTiles(a, b, mode) {
   if (!a || !b) return [];
   const out = [];
   if (mode === 'one') return [I(...b)];
+  if (mode === 'plot') { // every tile of the plot under the pointer, the hovered one first
+    const p = plotOf(I(...b)), px = (p % PLOTS) * PLOT, pz = ((p / PLOTS) | 0) * PLOT;
+    out.push(I(...b));
+    for (let z = pz; z < pz + PLOT; z++) for (let x = px; x < px + PLOT; x++) if (I(x, z) !== out[0]) out.push(I(x, z));
+    return out;
+  }
   if (mode === 'line') {
     const [ax, az] = a, [bx, bz] = b, sx = Math.sign(bx - ax), sz = Math.sign(bz - az);
     let x = ax, z = az;
@@ -176,6 +184,9 @@ function lockText(t) {
 function evaluate(i) {
   const T = S.tiles[i], treeCost = T.tree && !T.t ? 5 : 0;
   if (isLocked(unlockKey(tool))) return { ok: false, why: lockText(tool) };
+  if (tool.id === 'buy') return evaluatePlot(plotOf(i));
+  if (!S.owned[plotOf(i)]) return { ok: false, why: 'Terreno sin comprar: cómpralo en «Terrenos»' };
+  if (T.hw) return tool.id === 'road' || tool.id === 'avenue' ? { ok: true, cost: 0, skip: true } : { ok: false, why: 'Es la autopista: no se puede tocar' };
   switch (tool.id) {
     case 'avenue':
       if (T.t === 'road' && T.av) return { ok: true, cost: 0, skip: true };
@@ -206,8 +217,36 @@ function evaluate(i) {
   }
 }
 
+// plots: bought one at a time, next to land the city owns, as many as the rank allows
+const plotsBought = () => S.owned.filter(Boolean).length - 4;
+function evaluatePlot(p) {
+  if (S.owned[p]) return { ok: false, why: 'Este terreno ya es tuyo' };
+  const px = p % PLOTS, pz = (p / PLOTS) | 0;
+  const nextTo = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => px + dx >= 0 && px + dx < PLOTS && pz + dz >= 0 && pz + dz < PLOTS && S.owned[(pz + dz) * PLOTS + px + dx]);
+  if (!nextTo) return { ok: false, why: 'Tiene que lindar con tus terrenos' };
+  const rank = S.rank ?? 0;
+  if (plotsBought() >= PLOTS_FOR_RANK[rank]) {
+    const next = PLOTS_FOR_RANK.findIndex((n) => n > plotsBought());
+    return { ok: false, why: next > 0 ? `Para comprar más terreno, sube a ${RANKS[next][1].toLowerCase()} (${fmt(RANKS[next][0])} habitantes)` : 'Ya no quedan terrenos por comprar' };
+  }
+  return { ok: true, cost: plotPrice(plotsBought()) };
+}
+function buyPlot(i) {
+  const p = plotOf(i), ev = evaluatePlot(p);
+  if (!ev.ok) { news(ev.why, 'TERRENOS'); return; }
+  if (ev.cost > S.money) { news(`Fondos insuficientes: el terreno cuesta ${money(ev.cost)}.`, 'AVISO'); return; }
+  S.money -= ev.cost;
+  S.owned[p] = true;
+  drawPlots();
+  sfx('cash');
+  news(`${S.name} compra un nuevo terreno por ${money(ev.cost)}. ¡Hay sitio para crecer!`, 'TERRENOS');
+  updateHud();
+  save();
+}
+
 function apply(list) {
   if (tool.id === 'look') return;
+  if (tool.id === 'buy') { if (list.length) buyPlot(list[0]); return; }
   const evals = list.map((i) => [i, evaluate(i)]).filter(([, e]) => e.ok && !e.skip);
   const cost = evals.reduce((a, [, e]) => a + e.cost, 0);
   if (!evals.length) return;
@@ -290,8 +329,9 @@ function updateCursor(e) {
   const list = tool.id === 'look' ? [I(...t)] : pathTiles(drag ? drag.a : t, t, tool.mode);
   let cost = 0, bad = '', warn = '';
   cursor.count = list.length;
+  const plotEv = tool.mode === 'plot' ? evaluate(list[0]) : null; // a plot is judged once, as a whole
   list.forEach((i, k) => {
-    const ev = tool.id === 'look' ? { ok: true } : evaluate(i);
+    const ev = plotEv ? (k ? { ...plotEv, cost: 0 } : plotEv) : tool.id === 'look' ? { ok: true } : evaluate(i);
     if (ev.ok && !ev.skip) cost += ev.cost;
     if (!ev.ok) bad = ev.why;
     if (ev.warn) warn = ev.warn;
@@ -302,7 +342,7 @@ function updateCursor(e) {
   cursor.instanceMatrix.needsUpdate = true;
   if (cursor.instanceColor) cursor.instanceColor.needsUpdate = true;
   tip.innerHTML = tool.id === 'look' ? describe(I(...t))
-    : `<b>${ic(tool.ico)} ${tool.label}</b>${list.length > 1 ? `${list.length} casillas · ` : ''}${money(cost)}${cost > S.money ? ' <span class="bad">(no te llega)</span>' : ''}${bad ? `<br><span class="bad">${bad}</span>` : ''}${warn ? `<br><span class="bad">${warn}</span>` : ''}`;
+    : `<b>${ic(tool.ico)} ${tool.label}</b>${list.length > 1 && !plotEv ? `${list.length} casillas · ` : ''}${money(cost)}${cost > S.money ? ' <span class="bad">(no te llega)</span>' : ''}${bad ? `<br><span class="bad">${bad}</span>` : ''}${warn ? `<br><span class="bad">${warn}</span>` : ''}`;
   tip.style.display = tip.innerHTML ? 'block' : 'none';
   tip.style.left = `${Math.min(e.clientX + 16, innerWidth - 270)}px`;
   tip.style.top = `${e.clientY + 16}px`;
@@ -411,6 +451,8 @@ function renderAlerts() {
   if (d.emptyLots && !d.waterCap) out.push(['drop', 'Sin torre de agua no se muda nadie', 'water']);
   else if (!d.waterOk) out.push(['drop', 'Grifos secos: falta agua', 'water']);
   else if (d.emptyLots && d.waterCap - d.waterUse < 4) out.push(['drop', 'Agua al límite: la ciudad no puede crecer', 'water']);
+  if (d.trashUse > d.trashCap) out.push(['bin', d.trashCap ? 'Los vertederos no dan abasto: la basura se acumula' : 'No hay vertedero: la basura se acumula en las calles', 'landfill']);
+  if (!d.connected && d.pop >= 150) out.push(['highway', 'Conecta una calle con la autopista del oeste para recibir turistas y mercancías', 'road']);
   if (S.money < 0) out.push(['trend', 'Números rojos: revisa el presupuesto', 'budget']);
   const key = out.map((a) => a[1]).join('|');
   if (key === renderAlerts.key) return;

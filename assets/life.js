@@ -1,7 +1,7 @@
 // Urbania — street life: traffic and commuting, pedestrians, boats, birds, smoke, fires and rain.
 import * as THREE from 'three';
 import { Builder, GEO, glowMat, pick } from './buildings.js';
-import { DIRS, HALF, I, N, W, WATER, _c, _e, _m, _q, _s, _v, news, riverZ } from './config.js';
+import { HW_Z, SERVICES, DIRS, HALF, I, N, W, WATER, _c, _e, _m, _q, _s, _v, news, riverZ } from './config.js';
 import { S, load } from './state.js';
 import { controls, renderer, scene } from './scene.js';
 import { chunks, isBusStop, isRoad, refreshTile, smokeEmitters } from './world.js';
@@ -19,28 +19,28 @@ function vehicleType(cap, build) {
   const mesh = new THREE.InstancedMesh(body.geometry, mat, cap);
   const glow = new THREE.InstancedMesh(lights.geometry, glowMat, cap);
   for (const m of [mesh, glow]) { m.count = 0; m.castShadow = m === mesh; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; scene.add(m); }
-  return { mesh, glow, list: [] };
+  return { mesh, glow, list: [], cap };
 }
 const WHITE = 0xffffff, GLASS = 0x2e3a48, TYRE = 0x222222, LAMP = 0xfff2c4, TAIL = 0xff2a1a;
 const VEH = {
-  car: vehicleType(220, (b) => {
+  car: vehicleType(1500, (b) => {
     b.box(0, 0.018, 0, 0.075, 0.042, 0.14, WHITE).box(0, 0.06, -0.012, 0.066, 0.036, 0.075, GLASS);
     for (const [x, z] of [[-0.036, 0.045], [0.036, 0.045], [-0.036, -0.045], [0.036, -0.045]]) b.box(x, 0, z, 0.012, 0.026, 0.026, TYRE);
     b.box(-0.025, 0.03, 0.071, 0.016, 0.012, 0.004, LAMP, 1).box(0.025, 0.03, 0.071, 0.016, 0.012, 0.004, LAMP, 1);
     b.box(-0.027, 0.03, -0.0715, 0.014, 0.01, 0.004, TAIL, 1).box(0.027, 0.03, -0.0715, 0.014, 0.01, 0.004, TAIL, 1);
   }),
-  van: vehicleType(50, (b) => {
+  van: vehicleType(280, (b) => {
     b.box(0, 0.02, -0.03, 0.082, 0.1, 0.15, WHITE).box(0, 0.02, 0.07, 0.08, 0.07, 0.06, WHITE).box(0, 0.06, 0.1, 0.07, 0.03, 0.004, GLASS);
     b.box(-0.026, 0.035, 0.101, 0.016, 0.012, 0.004, LAMP, 1).box(0.026, 0.035, 0.101, 0.016, 0.012, 0.004, LAMP, 1);
     b.box(-0.03, 0.04, -0.106, 0.014, 0.014, 0.004, TAIL, 1).box(0.03, 0.04, -0.106, 0.014, 0.014, 0.004, TAIL, 1);
   }),
-  truck: vehicleType(30, (b) => {
+  truck: vehicleType(220, (b) => {
     b.box(0, 0.02, -0.035, 0.09, 0.11, 0.2, WHITE).box(0, 0.02, 0.1, 0.088, 0.09, 0.07, WHITE).box(0, 0.075, 0.136, 0.078, 0.03, 0.004, GLASS);
     b.box(0, 0.13, -0.035, 0.03, 0.012, 0.19, 0xd8d2c4);
     b.box(-0.03, 0.04, 0.137, 0.016, 0.012, 0.004, LAMP, 1).box(0.03, 0.04, 0.137, 0.016, 0.012, 0.004, LAMP, 1);
     b.box(-0.035, 0.04, -0.136, 0.014, 0.014, 0.004, TAIL, 1).box(0.035, 0.04, -0.136, 0.014, 0.014, 0.004, TAIL, 1);
   }),
-  bus: vehicleType(30, (b) => {
+  bus: vehicleType(90, (b) => {
     b.box(0, 0.02, 0, 0.088, 0.105, 0.34, WHITE).box(0, 0.07, 0, 0.09, 0.035, 0.32, GLASS).box(0, 0.07, 0.17, 0.08, 0.035, 0.004, GLASS);
     b.box(0, 0.125, 0, 0.07, 0.01, 0.2, 0xe8e4dc);
     b.box(-0.03, 0.04, 0.171, 0.018, 0.012, 0.004, LAMP, 1).box(0.03, 0.04, 0.171, 0.018, 0.012, 0.004, LAMP, 1);
@@ -60,7 +60,7 @@ const beamMat = new THREE.MeshBasicMaterial({
   })(),
   transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
 });
-const beams = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.16, 0.3).rotateX(-Math.PI / 2).translate(0, 0.0045, 0.15), beamMat, 340);
+const beams = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.16, 0.3).rotateX(-Math.PI / 2).translate(0, 0.0045, 0.15), beamMat, 2100);
 beams.count = 0; beams.frustumCulled = false; beams.renderOrder = 2; scene.add(beams);
 const _beam = new THREE.Matrix4(), _beamOff = new THREE.Matrix4();
 const sirens = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.016, 0.02), new THREE.MeshBasicMaterial(), 40);
@@ -73,11 +73,21 @@ const ROLES = {
   delivery: { type: 'van', speed: 0.9 }, garbage: { type: 'truck', colour: 0x4f9a5a, speed: 0.55 },
   bus: { type: 'bus', speed: 0.75 }, police: { type: 'car', colour: 0x2f4f8f, speed: 1.3, siren: 0.1 },
   ambulance: { type: 'van', colour: 0xf4f4f4, speed: 1.3, siren: 0.13 }, fire: { type: 'truck', colour: 0xd8342a, speed: 1.2, siren: 0.15 },
+  tourist: { type: 'car', speed: 1.2 }, cargo: { type: 'truck', speed: 0.85 },
 };
 
+// road neighbours of each tile, cached until the road network changes
+let nbrCache = [], nbrKey = -1;
 function roadNeighbours(i) {
-  const x = i % N, z = (i / N) | 0;
-  return DIRS.map(([dx, dz]) => [x + dx, z + dz]).filter(([a, b]) => isRoad(a, b)).map(([a, b]) => I(a, b));
+  const key = D ? D.roads : -1;
+  if (key !== nbrKey) { nbrCache = []; nbrKey = key; }
+  let list = nbrCache[i];
+  if (!list) {
+    const x = i % N, z = (i / N) | 0;
+    list = nbrCache[i] = [];
+    for (const [dx, dz] of DIRS) if (isRoad(x + dx, z + dz)) list.push(I(x + dx, z + dz));
+  }
+  return list;
 }
 const isJunction = (i) => roadNeighbours(i).length >= 3;
 
@@ -104,12 +114,17 @@ function spawn(role, at = -1) {
     const trip = commuteTrip();
     if (trip) [from, path] = trip;
   }
+  if (role === 'tourist' || role === 'cargo') { // visitors and lorries come and go by the motorway
+    const trip = regionTrip(role);
+    if (!trip) return;
+    [from, path] = trip;
+  }
   const opts = roadNeighbours(from);
   if (!opts.length) return;
   const first = path && path.length ? path.shift() : pick(Math.random, opts);
   agents.push({ role, from, to: first, t: path ? 0 : Math.random() * 0.5, v: R.speed * (0.85 + Math.random() * 0.3), wait: 0,
     path, commute: !!path,
-    colour: new THREE.Color(R.colour ?? (role === 'bus' ? pick(Math.random, [0xd8342a, 0xe0a83a, 0x3f9a5a]) : role === 'delivery' ? pick(Math.random, [0xf2efe6, 0xe0a83a, 0x3f6fb5]) : pick(Math.random, CAR_COLOURS))),
+    colour: new THREE.Color(R.colour ?? (role === 'cargo' ? pick(Math.random, [0x3f6fb5, 0xd8342a, 0xf2efe6, 0x4f9a5a, 0xe0a83a]) : role === 'bus' ? pick(Math.random, [0xd8342a, 0xe0a83a, 0x3f9a5a]) : role === 'delivery' ? pick(Math.random, [0xf2efe6, 0xe0a83a, 0x3f6fb5]) : pick(Math.random, CAR_COLOURS))),
     alarm: Math.random() < 0.35 });
 }
 
@@ -119,17 +134,29 @@ let tripCache = null, tripCacheKey = '';
 function tripEnds() {
   const key = `${D.buildings}|${D.roads}`;
   if (key !== tripCacheKey) {
-    const homes = [], jobs = [], shops = [];
+    const homes = [], jobs = [], shops = [], factories = [], sights = [];
     S.tiles.forEach((T, i) => {
+      if (T.t === 'svc' && SERVICES[T.s].tourism) { const r = nearestRoad(i % N, (i / N) | 0); if (r >= 0) sights.push(r); }
       if (T.t !== 'zone' || !T.lv || T.build > 0) return;
       const r = nearestRoad(i % N, (i / N) | 0);
       if (r < 0) return;
-      if (T.z === 'res') homes.push(r); else { jobs.push(r); if (T.z === 'com') shops.push(r); }
+      if (T.z === 'res') homes.push(r); else { jobs.push(r); if (T.z === 'com') shops.push(r); if (T.z === 'ind') factories.push(r); }
     });
-    tripCache = { homes, jobs, shops };
+    tripCache = { homes, jobs, shops, factories, sights };
     tripCacheKey = key;
   }
   return tripCache;
+}
+// trips to or from the edge of the map: tourists to the sights (or shops), lorries to the factories
+function regionTrip(role) {
+  if (!D.connected) return null;
+  const { factories, sights, shops } = tripEnds(), edge = HW_Z * N;
+  const ends = role === 'cargo' ? factories : sights.length ? sights : shops;
+  if (!ends.length) return null;
+  const end = pick(Math.random, ends), inbound = Math.random() < 0.55;
+  const [a, b] = inbound ? [edge, end] : [end, edge];
+  const path = routeBetween(a, b);
+  return path && path.length > 1 ? [a, path] : null;
 }
 function commuteTrip() {
   const { homes, jobs, shops } = tripEnds();
@@ -145,40 +172,69 @@ function commuteTrip() {
   const path = routeBetween(a, b);
   return path && path.length > 1 ? [a, path] : null;
 }
-// Dijkstra over road tiles; busy tiles cost more so traffic spreads over alternative streets
-function routeBetween(from, to) {
-  const dist = new Map([[from, 0]]), prev = new Map(), heap = [[0, from]];
-  const push = (item) => { heap.push(item); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
-  const popMin = () => {
-    const top = heap[0], last = heap.pop();
-    if (heap.length) {
-      heap[0] = last;
-      let i = 0;
-      for (;;) {
-        const l = i * 2 + 1, r = l + 1;
-        let m = i;
-        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
-        if (m === i) break;
-        [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
-      }
+// A* over road tiles with typed arrays (fast enough for thousands of trips on the big map);
+// busy tiles cost more so traffic spreads over alternative streets, avenues cost less
+const gScore = new Float32Array(N * N), cameFrom = new Int32Array(N * N), seen = new Uint32Array(N * N);
+const heapF = [], heapI = [];
+let searchId = 0;
+function heapPush(f, i) {
+  let k = heapF.length;
+  heapF.push(f); heapI.push(i);
+  while (k > 0) {
+    const p = (k - 1) >> 1;
+    if (heapF[p] <= f) break;
+    heapF[k] = heapF[p]; heapI[k] = heapI[p]; k = p;
+  }
+  heapF[k] = f; heapI[k] = i;
+}
+function heapPop() {
+  const top = heapI[0], lf = heapF.pop(), li = heapI.pop(), n = heapF.length;
+  if (n) {
+    let k = 0;
+    for (;;) {
+      const l = k * 2 + 1, r = l + 1;
+      let m = -1, mf = lf;
+      if (l < n && heapF[l] < mf) { m = l; mf = heapF[l]; }
+      if (r < n && heapF[r] < mf) m = r;
+      if (m < 0) break;
+      heapF[k] = heapF[m]; heapI[k] = heapI[m]; k = m;
     }
-    return top;
-  };
-  while (heap.length) {
-    const [dcur, cur] = popMin();
-    if (cur === to) break;
-    if (dcur > dist.get(cur)) continue;
+    heapF[k] = lf; heapI[k] = li;
+  }
+  return top;
+}
+const routeCache = new Map();
+let routeCacheKey = -1;
+function routeBetween(from, to) {
+  if (routeCacheKey !== nbrKey || routeCache.size > 3000) { routeCache.clear(); routeCacheKey = nbrKey; }
+  const ck = from * 16384 + to, hit = routeCache.get(ck);
+  if (hit && Math.random() < 0.85) return hit.slice(); // mostly reuse, sometimes re-plan around new jams
+  const tx = to % N, tz = (to / N) | 0;
+  const h = (i) => (Math.abs((i % N) - tx) + Math.abs(((i / N) | 0) - tz)) * 0.85;
+  searchId++;
+  heapF.length = heapI.length = 0;
+  seen[from] = searchId; gScore[from] = 0; cameFrom[from] = -1;
+  heapPush(h(from), from);
+  let found = false;
+  while (heapF.length) {
+    const cur = heapPop();
+    if (cur === to) { found = true; break; }
+    const gc = gScore[cur];
     for (const n of roadNeighbours(cur)) {
       const av = S.tiles[n].av ? 0.5 : 1; // avenues carry twice the traffic and are preferred
-      const nd = dcur + 1 + roadLoad[n] * 0.6 * av - (av < 1 ? 0.15 : 0);
-      if (nd < (dist.get(n) ?? Infinity)) { dist.set(n, nd); prev.set(n, cur); push([nd, n]); }
+      const ng = gc + 1 + roadLoad[n] * 0.6 * av - (av < 1 ? 0.15 : 0);
+      if (seen[n] !== searchId || ng < gScore[n]) {
+        seen[n] = searchId; gScore[n] = ng; cameFrom[n] = cur;
+        heapPush(ng + h(n), n);
+      }
     }
   }
-  if (!prev.has(to)) return null;
+  if (!found) return null;
   const path = [];
-  for (let c = to; c !== from; c = prev.get(c)) path.unshift(c);
-  return path;
+  for (let c = to; c !== from; c = cameFrom[c]) path.push(c);
+  path.reverse();
+  routeCache.set(ck, path);
+  return path.slice();
 }
 
 function wanted(d) {
@@ -186,20 +242,22 @@ function wanted(d) {
   const dayF = rush ? 1 : h >= 6 && h < 22 ? 0.6 : 0.2;
   const depots = d.svc.bus || 0;
   // buses take commuters off the road: the more homes a bus station covers, the fewer cars
-  const busShare = depots ? 0.35 * (d.cov.bus || 0) * (law('transporte') ? 1.5 : 1) : 0;
-  const cars = d.pop ? Math.min(220, Math.round((d.roads / 4 + d.pop / 9) * dayF * (1 - busShare) * (law('transporte') ? 0.75 : 1))) : 0;
+  const busShare = Math.min(0.7, (depots ? 0.35 * (d.cov.bus || 0) : 0) + 0.4 * (d.cov.metro || 0)) * (law('transporte') ? 1.4 : 1);
+  const cars = d.pop ? Math.min(1400, Math.round((d.roads / 4 + d.pop / 9) * dayF * (1 - busShare) * (law('transporte') ? 0.75 : 1))) : 0;
   return {
     car: Math.round(cars * 0.9), taxi: Math.round(cars * 0.1),
-    delivery: !d.pop ? 0 : h >= 6 && h < 21 ? Math.min(45, Math.round((d.jobs.com + d.jobs.ind) / 35)) : 2,
-    garbage: d.pop > 60 && h >= 5 && h < 11 ? Math.min(6, Math.ceil(d.pop / 500)) : 0,
-    bus: Math.min(30, depots * 3 * (law('transporte') ? 2 : 1) * (h >= 1 && h < 5 ? 0.5 : 1)),
+    delivery: !d.pop ? 0 : h >= 6 && h < 21 ? Math.min(240, Math.round((d.jobs.com + d.jobs.ind) / 35)) : 2,
+    garbage: h >= 5 && h < 12 ? Math.min(40, ((d.svc.landfill || 0) + (d.svc.incinerator || 0)) * 3) : 0,
+    tourist: d.connected && h >= 7 && h < 23 ? Math.min(160, Math.round(d.fin.income.tourism / 25)) : 0,
+    cargo: d.connected && h >= 5 && h < 22 ? Math.min(170, Math.round(d.jobs.ind / 18)) : 0,
+    bus: Math.min(80, depots * 3 * (law('transporte') ? 2 : 1) * (h >= 1 && h < 5 ? 0.5 : 1)),
     police: (d.svc.police || 0) * 2, ambulance: d.svc.health || 0, fire: d.svc.fire || 0,
   };
 }
 function stationOf(role) {
-  const kind = { police: 'police', ambulance: 'health', fire: 'fire', bus: 'bus', garbage: 'water' }[role];
-  if (!kind) return -1;
-  const list = D.svcList.filter(([s]) => s === kind);
+  const kinds = { police: ['police'], ambulance: ['health', 'hospital'], fire: ['fire'], bus: ['bus'], garbage: ['landfill', 'incinerator'] }[role];
+  if (!kinds) return -1;
+  const list = D.svcList.filter(([s]) => kinds.includes(s));
   if (!list.length) return -1;
   const [, x, z] = pick(Math.random, list);
   return nearestRoad(x, z);
@@ -218,7 +276,7 @@ function updateTraffic(dt) {
   for (const a of agents) have[a.role] = (have[a.role] || 0) + 1;
   for (const role of Object.keys(ROLES)) {
     const n = have[role] || 0, w = Math.floor(want[role]);
-    if (n < w) for (let k = n; k < Math.min(w, n + (role === 'car' ? 3 : 6)); k++) spawn(role, stationOf(role));
+    if (n < w) for (let k = n; k < Math.min(w, n + (role === 'car' ? 8 : 6)); k++) spawn(role, stationOf(role));
     else if (n > w) { const idx = agents.findIndex((a) => a.role === role && !(a.target >= 0)); if (idx >= 0) agents.splice(idx, 1); }
   }
   const k = S.speed ? Math.min(3, S.speed) : 0;
@@ -275,9 +333,10 @@ function updateTraffic(dt) {
     _v.set(fx + ddx * a.t - (ddz / len) * 0.2, y, fz + ddz * a.t + (ddx / len) * 0.2);
     _m.compose(_v, _q.setFromEuler(_e.set(0, Math.atan2(ddx, ddz), 0)), _s.set(VEH_SCALE, VEH_SCALE, VEH_SCALE));
     const T = VEH[R.type], idx = T.list.length;
+    if (idx >= T.cap) continue; // more vehicles than instances: the extra ones still drive, unseen
     T.list.push(a);
     T.mesh.setMatrixAt(idx, _m); T.glow.setMatrixAt(idx, _m); T.mesh.setColorAt(idx, a.colour);
-    if (beamMat.opacity > 0.01 && beamN < 340) beams.setMatrixAt(beamN++, _beam.copy(_m).multiply(_beamOff.makeTranslation(0, 0, FRONT[R.type])));
+    if (beamMat.opacity > 0.01 && beamN < 2100) beams.setMatrixAt(beamN++, _beam.copy(_m).multiply(_beamOff.makeTranslation(0, 0, FRONT[R.type])));
     if (R.siren && sirenN < 40) {
       const m2 = _m.clone().multiply(new THREE.Matrix4().makeTranslation(0, R.siren, 0));
       sirens.setMatrixAt(sirenN, m2);
@@ -342,27 +401,44 @@ function updateBirds(dt) {
 }
 
 // pedestrians walk along the pavements of the road network
-const PEOPLE = 240, SKIN = [0xf1c9a5, 0xd9a47a, 0x9a6a4a, 0x6b4a33], CLOTHES = [0xd8342a, 0x2f5fb5, 0x4f9a5a, 0xe0a83a, 0x8a5fbf, 0x3b3f46, 0xf2efe6];
+const PEOPLE = 1600, SKIN = [0xf1c9a5, 0xd9a47a, 0x9a6a4a, 0x6b4a33], CLOTHES = [0xd8342a, 0x2f5fb5, 0x4f9a5a, 0xe0a83a, 0x8a5fbf, 0x3b3f46, 0xf2efe6];
 const peopleMesh = new THREE.InstancedMesh(new THREE.CapsuleGeometry(0.022, 0.05, 2, 6).translate(0, 0.047, 0),
   new THREE.MeshStandardMaterial({ roughness: 0.8 }), PEOPLE);
 const headMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.018, 6, 4).translate(0, 0.105, 0), new THREE.MeshStandardMaterial({ roughness: 0.8 }), PEOPLE);
 for (const m of [peopleMesh, headMesh]) { m.castShadow = true; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); }
 const walkers = [];
+// how far people wander from the middle of each leisure tile
+const STROLL = { park: 0.38, plaza: 0.36, zoo: 0.3, museum: 0.25, stadium: 0.3, ferris: 0.34 };
 function updatePeople(dt) {
   if (!D) return;
   const h = S.minutes / 60, target = D.pop ? Math.min(PEOPLE, Math.floor((D.pop / 5) * (h >= 7 && h < 22 ? 1 : 0.3)) + 4) : 0;
-  if (walkers.length < target) {
-    const roads = S.tiles.map((T, i) => (T.t === 'road' && !WATER[i] ? i : -1)).filter((i) => i >= 0 && roadNeighbours(i).length);
-    if (roads.length) {
-      const from = pick(Math.random, roads), k = walkers.length;
+  // up to a few new people per frame: most walk the pavements, some stroll around parks and squares
+  for (let s = 0; s < 8 && walkers.length < target; s++) {
+    const roads = roadTiles().filter((i) => !WATER[i]);
+    if (!roads.length) break;
+    const k = walkers.length, leisure = D.svcList.filter(([kind]) => STROLL[kind]);
+    if (leisure.length && Math.random() < 0.3) {
+      const [kind, x, z] = pick(Math.random, leisure);
+      walkers.push({ park: [W(x), W(z), STROLL[kind]], ang: Math.random() * 6.28, r: 0.12 + Math.random() * STROLL[kind], v: (0.25 + Math.random() * 0.35) * (Math.random() < 0.5 ? 1 : -1), phase: Math.random() * 6 });
+    } else {
+      const from = pick(Math.random, roads);
       walkers.push({ from, to: pick(Math.random, roadNeighbours(from)), t: Math.random(), side: Math.random() < 0.5 ? 1 : -1, v: 0.18 + Math.random() * 0.12, phase: Math.random() * 6 });
-      peopleMesh.setColorAt(k, _c.set(pick(Math.random, CLOTHES)));
-      headMesh.setColorAt(k, _c.set(pick(Math.random, SKIN)));
-      peopleMesh.instanceColor.needsUpdate = headMesh.instanceColor.needsUpdate = true;
     }
-  } else if (walkers.length > target) walkers.pop();
+    peopleMesh.setColorAt(k, _c.set(pick(Math.random, CLOTHES)));
+    headMesh.setColorAt(k, _c.set(pick(Math.random, SKIN)));
+    peopleMesh.instanceColor.needsUpdate = headMesh.instanceColor.needsUpdate = true;
+  }
+  if (walkers.length > target) walkers.length = Math.max(target, walkers.length - 8);
   const k = S.speed ? Math.min(3, S.speed) : 0;
   walkers.forEach((w, n) => {
+    if (w.park) { // strolling in circles around a park, square or attraction
+      const [cx, cz] = w.park;
+      w.ang += dt * w.v * k / Math.max(0.15, w.r);
+      const bob = Math.abs(Math.sin((w.phase += dt * 9 * k))) * 0.01;
+      _m.compose(_v.set(cx + Math.cos(w.ang) * w.r, 0.045 + bob, cz + Math.sin(w.ang) * w.r), _q.setFromEuler(_e.set(0, -w.ang + (w.v > 0 ? 0 : Math.PI), 0)), _s.set(1.3, 1.3, 1.3));
+      peopleMesh.setMatrixAt(n, _m); headMesh.setMatrixAt(n, _m);
+      return;
+    }
     w.t += dt * w.v * k;
     if (w.t >= 1 || S.tiles[w.to].t !== 'road') {
       if (S.tiles[w.to].t !== 'road' || S.tiles[w.from].t !== 'road') { w.t = 1.01; return; }

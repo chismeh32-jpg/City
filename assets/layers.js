@@ -1,18 +1,23 @@
 // Urbania — information layers drawn over the map (land value, pollution, traffic, service coverage)
 // and the coverage ring shown while placing a service.
 import * as THREE from 'three';
-import { N, SERVICES, W, WATER, _c, _m, clamp, el, ic } from './config.js';
+import { plotOf, N, SERVICES, W, WATER, _c, _m, clamp, el, ic } from './config.js';
 import { S } from './state.js';
 import { scene } from './scene.js';
 import { D, radiusOf } from './sim.js';
 import { roadLoad } from './life.js';
 
 const COVERAGE = ['health', 'school', 'police', 'fire', 'park', 'bus'];
+// which buildings each coverage layer counts, and the layer shown while placing each service
+const COVER_KINDS = { health: ['health', 'hospital'], edu: ['highschool', 'university'], metro: ['metro'] };
+const layerFor = (svc) => (SERVICES[svc].leisure ? 'cov:leisure' : svc === 'hospital' ? 'cov:health' : svc === 'highschool' || svc === 'university' ? 'cov:edu' : `cov:${svc}`);
 const LAYERS = {
   land: { label: 'Valor del suelo', ico: 'coins', legend: ['Bajo', 'Alto'] },
   pollution: { label: 'Contaminación', ico: 'factory', legend: ['Contaminado', 'Limpio'] },
   traffic: { label: 'Tráfico', ico: 'road', legend: ['Atasco', 'Fluido'] },
-  ...Object.fromEntries(COVERAGE.map((k) => [`cov:${k}`, { label: `Cobertura: ${SERVICES[k].label.toLowerCase()}`, short: SERVICES[k].label, ico: SERVICES[k].ico, legend: ['Sin servicio', 'Bien cubierto'], kind: [k] }])),
+  ...Object.fromEntries(COVERAGE.map((k) => [`cov:${k}`, { label: `Cobertura: ${SERVICES[k].label.toLowerCase()}`, short: k === 'health' ? 'Salud' : SERVICES[k].label, ico: SERVICES[k].ico, legend: ['Sin servicio', 'Bien cubierto'], kind: COVER_KINDS[k] || [k] }])),
+  'cov:edu': { label: 'Cobertura: institutos y universidad', short: 'Estudios superiores', ico: 'graduation', legend: ['Sin centros', 'Bien cubierto'], kind: COVER_KINDS.edu },
+  'cov:metro': { label: 'Cobertura: metro', short: 'Metro', ico: 'metro', legend: ['Sin metro', 'Bien cubierto'], kind: COVER_KINDS.metro },
   'cov:leisure': { label: 'Cobertura: ocio y cultura', short: 'Ocio y cultura', ico: 'ferris', legend: ['Sin ocio', 'Bien cubierto'], kind: Object.keys(SERVICES).filter((k) => SERVICES[k].leisure) },
 };
 const L_BAD = new THREE.Color(0xd8452f), L_MID = new THREE.Color(0xf0c04a), L_GOOD = new THREE.Color(0x3fa45a);
@@ -45,6 +50,7 @@ function drawLayer() {
   if (!layer || !D || !D.land) { layerMesh.count = 0; return; }
   let n = 0;
   for (let i = 0; i < N * N; i++) {
+    if (!S.owned[plotOf(i)]) continue; // only the city's own land
     const v = layerValue(layer, i);
     if (v == null) continue;
     _m.makeTranslation(W(i % N), 0, W((i / N) | 0));
@@ -91,4 +97,4 @@ function showRange(x, z, r) {
   rangeRing.scale.set(r, 1, r);
 }
 
-export { COVERAGE, LAYERS, L_BAD, L_MID, L_GOOD, gradient, layerMesh, layer, userLayer, layerClock, layerValue, drawLayer, renderLegend, setLayer, currentLayer, restoreLayer, updateLayer, rangeRing, showRange };
+export { COVER_KINDS, layerFor, COVERAGE, LAYERS, L_BAD, L_MID, L_GOOD, gradient, layerMesh, layer, userLayer, layerClock, layerValue, drawLayer, renderLegend, setLayer, currentLayer, restoreLayer, updateLayer, rangeRing, showRange };

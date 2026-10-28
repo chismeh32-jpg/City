@@ -27,7 +27,7 @@ function renderInspector() {
   if (inspected < 0 || !D) return;
   const i = inspected, T = S.tiles[i], x = i % N, z = (i / N) | 0, r = rng(i * 7 + (T.v || 0));
   let title = '', body = '', acts = '', height = 0.3;
-  const coverage = () => '<ul class="checks">' + [['cov:health', 'Centro de salud'], ['cov:school', 'Escuela'], ['cov:police', 'Policía'], ['cov:fire', 'Bomberos'], ['cov:park', 'Parque'], ['cov:bus', 'Autobús'], ['cov:leisure', 'Ocio y cultura']]
+  const coverage = () => '<ul class="checks">' + [['cov:health', 'Salud'], ['cov:school', 'Escuela'], ['cov:edu', 'Instituto o universidad'], ['cov:police', 'Policía'], ['cov:fire', 'Bomberos'], ['cov:park', 'Parque'], ['cov:bus', 'Autobús'], ['cov:metro', 'Metro'], ['cov:leisure', 'Ocio y cultura']]
     .map(([k, label]) => check(layerValue(k, i) > 0, label)).join('') + '</ul>';
   if (T.t === 'road') {
     title = `${ic(T.av ? 'avenue' : 'road')} ${T.av ? 'Avenida' : WATER[i] ? 'Puente' : 'Calle'}`;
@@ -41,6 +41,9 @@ function renderInspector() {
     if (def.radius) S.tiles.forEach((U, k) => { if (U.t === 'zone' && U.z === 'res' && U.lv && Math.hypot((k % N) - x, ((k / N) | 0) - z) <= radiusOf(T.s)) covered += ZONES.res.cap[U.lv]; });
     body = `<p>Mantenimiento: <b>${money(upkeepOf(T.s))}</b> al día · fondos al ${S.funding[def.fund]} %.</p>`
       + (def.cap ? `<p>Produce <b>${def.cap} ${def.plant === 'power' ? 'de luz' : 'de agua'}</b>${def.smoke ? ' y contamina a su alrededor' : ''}.</p>` : '')
+      + (def.trash ? `<p>Recoge <b>${def.trash} toneladas de basura</b> al día${def.power ? ` y la quema para producir <b>${def.power} de luz</b>` : ''}. La ciudad genera ${fmt(D.trashUse)} y puede tratar ${fmt(D.trashCap)}.</p>` : '')
+      + (def.edu ? `<p>Sube el nivel de estudios de la ciudad (ahora ${Math.round(D.edu * 100)} %): las oficinas buscan gente formada.</p>` : '')
+      + (T.s === 'metro' ? `<p>${(D.svc.metro || 0) >= 2 ? 'Conectada con el resto de la red: menos coches en las calles.' : 'Construye otra estación para abrir la primera línea.'}</p>` : '')
       + (def.radius ? `<p>Llega a <b>${Math.round(radiusOf(T.s))} casillas</b> y atiende a <b>${fmt(covered)} vecinos</b>.</p>` : '')
       + (def.tourism ? '<p>Atrae turistas que dejan dinero cada día.</p>' : '')
       + (T.s === 'cityhall' ? '<p>Desde aquí se aprueban las leyes.</p>' : '');

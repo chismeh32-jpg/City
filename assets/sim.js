@@ -1,6 +1,6 @@
 // Urbania — the city simulation: stats, budget, approval, votes, growth, construction, days and elections.
 import { pick } from './buildings.js';
-import { ELECTION_EVERY, FUNDS, I, LAWS, N, NEIGHBOURS, PARTIES, RANKS, RANK_REWARD, SERVICES, UNLOCK, WATER, ZONES, clamp, ic, inside, news } from './config.js';
+import { HW_Z, ELECTION_EVERY, FUNDS, I, LAWS, N, NEIGHBOURS, PARTIES, RANKS, RANK_REWARD, SERVICES, UNLOCK, WATER, ZONES, clamp, ic, inside, news } from './config.js';
 import { S } from './state.js';
 import { busNetwork, chunks, dirtyChunks, isRoad, refreshTile, setBusNetwork } from './world.js';
 import { showRankUp } from './panels.js';
@@ -18,15 +18,15 @@ const party = () => PARTIES[S.party] || PARTIES.centro;
 
 function radiusOf(k) {
   let r = SERVICES[k].radius * clamp(fundQ(SERVICES[k].fund), 0.4, 1.3);
-  if (k === 'health' && law('sanidad')) r *= 1.3;
+  if ((k === 'health' || k === 'hospital') && law('sanidad')) r *= 1.3;
   if (k === 'police' && law('manodura')) r *= 1.4;
   if (law('privatizar')) r *= 0.85;
   return r;
 }
 function upkeepOf(k) {
   let u = SERVICES[k].upkeep * fundQ(SERVICES[k].fund);
-  if (k === 'health' && law('sanidad')) u *= 1.4;
-  if (k === 'school' && law('educacion')) u *= 1.3;
+  if ((k === 'health' || k === 'hospital') && law('sanidad')) u *= 1.4;
+  if (SERVICES[k].fund === 'school' && law('educacion')) u *= 1.3;
   if (k === 'police' && law('manodura')) u *= 1.3;
   if (SERVICES[k].fund === 'utilities' && law('reciclaje')) u *= 1.15;
   if (law('privatizar')) u *= 0.75;
@@ -83,16 +83,37 @@ function computeFields(d, polluters) {
     if (T.t === 'zone' && T.z === 'com' && T.lv > 0 && !(T.build > 0)) stamp(land, i % N, (i / N) | 0, 3, 2);
     if (T.t === 'road' && roadLoad[i] > (T.av ? 3 : 1.5)) stamp(land, i % N, (i / N) | 0, 1.5, -6);
   }
-  for (let i = 0; i < N * N; i++) land[i] = WATER[i] ? 0 : clamp(land[i] + RIVERSIDE[i] * 14 - pol[i] * 45, 0, 100);
+  const trash = (d.trashPile || 0) * 10; // rubbish in the streets drags every neighbourhood down
+  for (let i = 0; i < N * N; i++) land[i] = WATER[i] ? 0 : clamp(land[i] + RIVERSIDE[i] * 14 - pol[i] * 45 - trash, 0, 100);
   d.land = land; d.pol = pol;
 }
+
+// is any of the city's own streets reachable from the motorway? (flood fill over road tiles)
+const seenRoad = new Uint8Array(N * N);
+function highwayConnected() {
+  seenRoad.fill(0);
+  const stack = [HW_Z * N];
+  seenRoad[HW_Z * N] = 1;
+  while (stack.length) {
+    const i = stack.pop(), x = i % N, z = (i / N) | 0;
+    if (!S.tiles[i].hw) return true;
+    for (const [dx, dz] of NEIGHBOURS4) {
+      const nx = x + dx, nz = z + dz, n = nz * N + nx;
+      if (nx < 0 || nz < 0 || nx >= N || nz >= N || seenRoad[n] || S.tiles[n].t !== 'road') continue;
+      seenRoad[n] = 1;
+      stack.push(n);
+    }
+  }
+  return false;
+}
+const NEIGHBOURS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 let D = null; // derived stats, refreshed every game hour and after edits
 function refresh() { D = compute(); return D; }
 function compute() {
   const d = {
     pop: 0, jobs: { com: 0, off: 0, ind: 0 }, jobsTotal: 0, powerUse: 0, powerCap: 0, waterUse: 0, waterCap: 0,
-    roads: 0, svc: {}, svcList: [], zoneTiles: { res: 0, com: 0, off: 0, ind: 0 }, buildings: 0, building: 0, emptyLots: 0, cov: {}, smoke: 0,
+    roads: 0, svc: {}, svcList: [], zoneTiles: { res: 0, com: 0, off: 0, ind: 0 }, buildings: 0, building: 0, emptyLots: 0, cov: {}, smoke: 0, trashCap: 0, trashUse: 0,
   };
   const homes = [], polluters = [], planned = { res: 0, com: 0, off: 0, ind: 0 };
   const indRange = law('industria') ? 2 : 0;
@@ -107,6 +128,8 @@ function compute() {
       if (def.plant === 'power') d.powerCap += def.cap * eff;
       else if (def.plant === 'water') d.waterCap += def.cap * eff;
       else if (!def.noPower) { d.powerUse += 3; d.waterUse += 3; }
+      if (def.power) d.powerCap += def.power * eff; // the incinerator burns rubbish into electricity
+      if (def.trash) d.trashCap += def.trash * eff;
       if (def.smoke) polluters.push([x, z, def.smoke[0], def.smoke[1]]);
     } else if (T.t === 'zone') {
       d.zoneTiles[T.z]++;
@@ -130,7 +153,17 @@ function compute() {
     for (const [hx, hz, p] of homes) if (list.some(([sx, sz, r]) => Math.hypot(sx - hx, sz - hz) <= r)) c += p;
     return d.pop ? c / d.pop : 0;
   };
-  for (const k of ['police', 'fire', 'health', 'school', 'park', 'bus']) d.cov[k] = covered([k]);
+  for (const k of ['police', 'fire', 'school', 'park', 'bus']) d.cov[k] = covered([k]);
+  d.cov.health = covered(['health', 'hospital']);
+  d.cov.high = covered(['highschool']);
+  d.cov.uni = covered(['university']);
+  d.cov.metro = (d.svc.metro || 0) >= 2 ? covered(['metro']) : 0; // a metro needs at least two stations
+  // education: primary schools, secondary schools and the university all count
+  d.edu = clamp(0.25 + 0.35 * d.cov.school + 0.25 * d.cov.high + 0.15 * d.cov.uni, 0, 1);
+  // rubbish: small villages take it to the neighbours; from 150 people it piles up without a dump
+  d.trashUse = d.pop >= 150 ? d.pop * 0.06 + d.jobsTotal * 0.04 : 0;
+  d.trashPile = clamp((S.trash || 0) / (d.pop * 0.3 + 20), 0, 1);
+  d.connected = highwayConnected();
   const hasBus = !!d.svc.bus;
   if (hasBus !== busNetwork) { setBusNetwork(hasBus); for (let c = 0; c < chunks.length; c++) dirtyChunks.add(c); }
   d.cov.leisure = covered(Object.keys(SERVICES).filter((k) => SERVICES[k].leisure));
@@ -150,8 +183,8 @@ function compute() {
   d.demand = {
     res: plannedJobs * 1.8 + 120 - planned.res + (law('alquiler') ? 25 : 0),
     com: d.pop * 0.2 + 16 - planned.com,
-    off: d.pop > 120 ? d.pop * 0.15 + 10 - planned.off : 0,
-    ind: d.pop * 0.22 + 30 - planned.ind,
+    off: d.pop > 120 ? (d.pop * 0.15 + 10) * (0.6 + 0.7 * d.edu) - planned.off : 0, // offices want an educated city
+    ind: d.pop * 0.22 + 30 - planned.ind + (d.connected ? 20 : 0), // factories sell to the region by motorway
   };
   // electorate: business-heavy cities lean right, well-served ones lean left
   const biz = d.jobsTotal ? (d.jobs.off + d.jobs.ind) / d.jobsTotal : 0.5;
@@ -172,7 +205,7 @@ function finances(d) {
     com: d.jobs.com * d.filled * S.taxes.com * 1.2 * (law('empresas') ? 0.8 : 1) * (law('horarios') ? 1.15 : 1),
     off: d.jobs.off * d.filled * S.taxes.off * 1.5 * (law('empresas') ? 0.8 : 1),
     ind: d.jobs.ind * d.filled * S.taxes.ind * 1.1 * (law('empresas') ? 0.8 : 1),
-    tourism: tourismBase * clamp(d.pop / 400, 0.2, 1.5) * (0.5 + S.approval / 100) * fundQ('leisure') * (law('turismo') ? 1.6 : 1),
+    tourism: tourismBase * clamp(d.pop / 400, 0.2, 1.5) * (0.5 + S.approval / 100) * fundQ('leisure') * (law('turismo') ? 1.6 : 1) * (d.connected ? 1 : 0.45),
   };
   const expense = Object.fromEntries(FUNDS.map(([k]) => [k, 0]));
   for (const [s] of d.svcList) expense[SERVICES[s].fund] += upkeepOf(s);
@@ -192,6 +225,11 @@ function approvalRows(d) {
   for (const [k, ic, label] of svc) rows.push([ic, label, 5 * d.cov[k] * Math.min(1, fundQ(k)) * care]);
   if (d.cov.bus > 0) rows.push(['🚌', 'Hay autobús para ir al trabajo', 3 * d.cov.bus * Math.min(1, fundQ('transport')) * (law('transporte') ? 1.3 : 1)]);
   if (d.cov.leisure > 0) rows.push(['🎡', 'Ocio y cultura cerca de casa', 4 * d.cov.leisure * Math.min(1, fundQ('leisure'))]);
+  if (d.cov.high > 0) rows.push(['🎓', 'Los jóvenes estudian el bachillerato cerca', 3 * d.cov.high * Math.min(1, fundQ('school'))]);
+  if (d.cov.uni > 0) rows.push(['🏛️', 'La ciudad tiene universidad', 2 + 2 * d.cov.uni]);
+  if (d.cov.metro > 0) rows.push(['🚇', 'El metro llega al barrio', 3 * d.cov.metro * Math.min(1, fundQ('transport'))]);
+  if (d.trashPile > 0.05) rows.push(['🗑️', 'Basura sin recoger en las calles', -14 * d.trashPile]);
+  if (S.disasterDay != null && S.day - S.disasterDay <= 2) rows.push(['🚨', 'La ciudad se recupera de un desastre', -6]);
   const ratio = d.workers ? d.jobsTotal / d.workers : 1;
   rows.push(ratio >= 1 ? ['💼', 'Hay trabajo para todos', 3] : ['💼', 'Falta trabajo', -Math.round((1 - ratio) * 10)]);
   if (d.smoke > 0.01) rows.push(['🏭', 'Humo de las chimeneas: la gente tose', -8 * d.smoke]);
@@ -323,6 +361,8 @@ function hourTick() {
   growth(D);
   D = compute();
   S.money += D.fin.net / 24;
+  // rubbish piles up when the dumps are full, and is cleared slowly when there is room again
+  S.trash = Math.max(0, (S.trash || 0) + (D.trashUse - D.trashCap) / 24 * (D.trashUse > D.trashCap ? 1 : 0.6));
   const step = 2;
   S.approval = S.approval < D.goal ? Math.min(D.goal, S.approval + step) : Math.max(D.goal, S.approval - step);
   if (S.loan) {
@@ -363,4 +403,4 @@ function election() {
   showElection(result);
 }
 
-export { nearRoad, fundQ, law, party, radiusOf, upkeepOf, buildCost, growthFactor, stamp, RIVERSIDE, LAND_FOR_LEVEL, computeFields, D, refresh, compute, finances, approvalRows, voteShare, BUILD_HOURS, POWER_PER_LV, WATER_PER_LV, startBuilding, growth, advanceConstruction, rankFor, checkRank, isLocked, sampleStats, hourTick, dayTick, election };
+export { highwayConnected, nearRoad, fundQ, law, party, radiusOf, upkeepOf, buildCost, growthFactor, stamp, RIVERSIDE, LAND_FOR_LEVEL, computeFields, D, refresh, compute, finances, approvalRows, voteShare, BUILD_HOURS, POWER_PER_LV, WATER_PER_LV, startBuilding, growth, advanceConstruction, rankFor, checkRank, isLocked, sampleStats, hourTick, dayTick, election };

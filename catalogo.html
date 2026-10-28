@@ -41,9 +41,13 @@
       ["power", "Central de gas", "140 de luz · contamina poco · 500 € al día"], ["coal", "Central de carbón", "240 de luz · contamina mucho · 350 € al día"],
       ["solar", "Parque solar", "60 de luz · limpia · 150 € al día"], ["wind", "Aerogenerador", "50 de luz · limpia · 120 € al día"],
       ["water", "Torre de agua", "140 de agua · 300 € al día"],
+      ["landfill", "Vertedero", "Recoge 160 t de basura al día · 300 € al día"], ["incinerator", "Incineradora", "320 t de basura y 60 de luz · 650 € al día"],
+      ["hospital", "Hospital", "Radio de 16 casillas · 1.600 € al día"], ["highschool", "Instituto", "Radio de 12 · más estudios, más oficinas"],
+      ["university", "Universidad", "Radio de 22 · única · atrae estudiantes"], ["metro", "Estación de metro", "Radio de 8 · con dos estaciones, menos coches"],
+      ["ferris", "Noria", "Ocio · gira de verdad · turismo"], ["landmark", "Torre Urbania", "Rascacielos emblemático · el mayor imán de turistas"],
     ];
     // buildings that unlock as the town grows (same thresholds as the game)
-    const UNLOCK = { plaza: "Pueblo", cityhall: "Pueblo", bus: "Pueblo", solar: "Pueblo", off: "Villa", museum: "Villa", wind: "Villa", zoo: "Ciudad", stadium: "Gran ciudad" };
+    const UNLOCK = { plaza: "Pueblo", cityhall: "Pueblo", bus: "Pueblo", solar: "Pueblo", landfill: "Pueblo", off: "Villa", museum: "Villa", wind: "Villa", highschool: "Villa", zoo: "Ciudad", hospital: "Ciudad", ferris: "Ciudad", incinerator: "Ciudad", stadium: "Gran ciudad", metro: "Gran ciudad", university: "Gran ciudad", landmark: "Metrópolis" };
     const items = [];
     for (const [z, Z] of Object.entries(ZONES))
       for (let lv = 1; lv <= 3; lv++)

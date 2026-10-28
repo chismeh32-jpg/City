@@ -1,7 +1,7 @@
 // Urbania — the 3D map: roads, trees, zone overlays and tile buildings batched into chunks.
 import * as THREE from 'three';
-import { Builder, FX, GEO, prep, rng, pick, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor, constructionSite, ruinSite } from './buildings.js';
-import { DIRS, HALF, I, N, RIVER_W, W, WATER, ZONES, _c, _e, _m, _q, _s, _v, forestNoise, hash, inside, riverZ } from './config.js';
+import { Builder, FX, GEO, ferrisWheel, prep, rng, pick, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor, constructionSite, ruinSite } from './buildings.js';
+import { DIRS, HALF, I, N, PLOT, PLOTS, RIVER_W, W, WATER, ZONES, _c, _e, _m, _q, _s, _v, forestNoise, hash, inside, riverZ } from './config.js';
 import { S } from './state.js';
 import { renderer, scene, terrainHeight } from './scene.js';
 
@@ -101,8 +101,8 @@ const PARKED = [0xd8342a, 0x2f5fb5, 0xf2efe6, 0x3b3f46, 0xe0a83a, 0x4f9a5a, 0x9a
 
 /* ---------------------------------------------------------------- trees (instanced) */
 const TREE_SLOTS = 3, DECOR = [];
-for (let k = 0; k < 4200; k++) {
-  const r = rng(k + 999), x = (r() - 0.5) * 150, z = (r() - 0.5) * 150;
+for (let k = 0; k < 7000; k++) {
+  const r = rng(k + 999), x = (r() - 0.5) * (N + 110), z = (r() - 0.5) * (N + 110);
   if (Math.abs(x) < HALF + 0.5 && Math.abs(z) < HALF + 0.5) continue;
   if (Math.abs(z + HALF - riverZ(x + HALF)) < RIVER_W + 0.6) continue;
   if (forestNoise(x, z) + r() * 0.8 > 0.6) DECOR.push([x, z, r]);
@@ -277,8 +277,10 @@ function buildChunk(c) {
     if (b.props) bld.merge(b.props, tileMatrix(i));
   }
   if (ch.group) disposeGroup(ch.group);
+  if (ch.lite) { disposeGroup(ch.lite); ch.lite = null; }
   ch.group = new THREE.Group();
   ch.group.add(bld.build(true), road.build(false));
+  ch.src = [bld, road]; // kept to build the far-away version when the camera moves off
   ch.smoke = bld.smoke;
   ch.lights = [...bld.lights, ...road.lights];
   lampPools.dirty = true;
@@ -287,15 +289,39 @@ function buildChunk(c) {
   renderer.shadowMap.needsUpdate = true;
 }
 
+// level of detail: chunks far from the camera swap to their lite version (built on demand, one per frame)
+const LOD_DIST = 62;
+let lodClock = 0;
+const _lodV = new THREE.Vector3();
+function updateLod(camera) {
+  if (++lodClock % 8) return;
+  let built = 0;
+  chunks.forEach((ch, c) => {
+    if (!ch.group) return;
+    _lodV.set(W((c % NC) * CH + CH / 2), 0, W(((c / NC) | 0) * CH + CH / 2));
+    const far = camera.position.distanceTo(_lodV) > LOD_DIST;
+    if (far && !ch.lite && ch.src && built < 2) {
+      ch.lite = new THREE.Group();
+      ch.lite.add(ch.src[0].build(true, true), ch.src[1].build(false, true));
+      scene.add(ch.lite);
+      built++;
+    }
+    const useLite = far && !!ch.lite;
+    if (ch.group.visible === useLite) { ch.group.visible = !useLite; renderer.shadowMap.needsUpdate = true; }
+    if (ch.lite) ch.lite.visible = useLite;
+  });
+}
+
 const rotors = new Map(); // tile index -> spinning wind turbine rotor
 function refreshTile(i, animate = false) {
   const T = S.tiles[i];
   if (rotors.has(i)) { scene.remove(rotors.get(i)); rotors.delete(i); }
-  if (T.t === 'svc' && T.s === 'wind') {
-    const holder = new THREE.Group(), rotor = windRotor();
+  if (T.t === 'svc' && (T.s === 'wind' || T.s === 'ferris')) {
+    const ferris = T.s === 'ferris', holder = new THREE.Group(), rotor = ferris ? ferrisWheel() : windRotor();
     holder.position.set(W(i % N), 0, W((i / N) | 0));
     holder.rotation.y = facing(i % N, (i / N) | 0);
-    rotor.position.set(0, 1.62, 0.08);
+    rotor.position.set(0, ferris ? 0.9 : 1.62, ferris ? 0 : 0.08);
+    holder.userData.speed = ferris ? 0.18 : 1;
     holder.add(rotor);
     holder.userData.rotor = rotor;
     scene.add(holder);
@@ -357,10 +383,39 @@ function rebuildDirtyChunks(budgetMs = 6) {
     if (performance.now() - t0 > budgetMs) break;
   }
 }
+/* land the city does not own yet: slightly shaded, with a dashed border around what it owns */
+const plotShade = new THREE.InstancedMesh(new THREE.PlaneGeometry(PLOT, PLOT).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x1d2a1a, transparent: true, opacity: 0.22, depthWrite: false }), PLOTS * PLOTS);
+plotShade.position.y = 0.05;
+plotShade.renderOrder = 1;
+scene.add(plotShade);
+let plotEdge = null;
+function drawPlots() {
+  let n = 0;
+  const seg = [], owned = (px, pz) => px >= 0 && pz >= 0 && px < PLOTS && pz < PLOTS && S.owned[pz * PLOTS + px];
+  for (let pz = 0; pz < PLOTS; pz++) for (let px = 0; px < PLOTS; px++) {
+    const x0 = px * PLOT - HALF, z0 = pz * PLOT - HALF;
+    if (!owned(px, pz)) { plotShade.setMatrixAt(n++, _m.makeTranslation(x0 + PLOT / 2, 0, z0 + PLOT / 2)); continue; }
+    if (!owned(px, pz - 1)) seg.push(x0, 0.07, z0, x0 + PLOT, 0.07, z0);
+    if (!owned(px, pz + 1)) seg.push(x0, 0.07, z0 + PLOT, x0 + PLOT, 0.07, z0 + PLOT);
+    if (!owned(px - 1, pz)) seg.push(x0, 0.07, z0, x0, 0.07, z0 + PLOT);
+    if (!owned(px + 1, pz)) seg.push(x0 + PLOT, 0.07, z0, x0 + PLOT, 0.07, z0 + PLOT);
+  }
+  plotShade.count = n;
+  plotShade.instanceMatrix.needsUpdate = true;
+  if (plotEdge) { scene.remove(plotEdge); plotEdge.geometry.dispose(); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3));
+  plotEdge = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: 0xfbf7ee, dashSize: 0.8, gapSize: 0.5, transparent: true, opacity: 0.85 }));
+  plotEdge.computeLineDistances();
+  scene.add(plotEdge);
+}
+
 function rebuildAll() {
+  drawPlots();
   for (const batch of [...growBatches]) finishBatch(batch);
   pendingGrow.clear();
   for (let i = 0; i < N * N; i++) refreshTile(i);
 }
 
-export { poolMat, pools, lampPools, flushPools, glowTexture, isRoad, busNetwork, setBusNetwork, busStopSide, isBusStop, roadBuilder, PARKED, TREE_SLOTS, DECOR, TREE_CAP, trunkMesh, crownMat, roundMesh, coneMesh, ZERO, slotOn, slotCone, slotMatrix, slotColor, GREENS, AUTUMN, BLOSSOM, treeSlot, setTrees, treesDirty, overlay, setOverlay, overlayDirty, flushInstances, cursor, smokeEmitters, CH, NC, chunks, dirtyChunks, animating, growBatches, pendingGrow, chunkOf, facing, tileBuilder, tileMatrix, disposeGroup, buildChunk, rotors, refreshTile, refreshAround, finishBatch, startGrowBatches, updateGrowth, rebuildDirtyChunks, rebuildAll };
+export { LOD_DIST, updateLod, plotShade, drawPlots, poolMat, pools, lampPools, flushPools, glowTexture, isRoad, busNetwork, setBusNetwork, busStopSide, isBusStop, roadBuilder, PARKED, TREE_SLOTS, DECOR, TREE_CAP, trunkMesh, crownMat, roundMesh, coneMesh, ZERO, slotOn, slotCone, slotMatrix, slotColor, GREENS, AUTUMN, BLOSSOM, treeSlot, setTrees, treesDirty, overlay, setOverlay, overlayDirty, flushInstances, cursor, smokeEmitters, CH, NC, chunks, dirtyChunks, animating, growBatches, pendingGrow, chunkOf, facing, tileBuilder, tileMatrix, disposeGroup, buildChunk, rotors, refreshTile, refreshAround, finishBatch, startGrowBatches, updateGrowth, rebuildDirtyChunks, rebuildAll };

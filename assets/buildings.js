@@ -127,6 +127,11 @@ export const GEO = {
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _n3 = new THREE.Matrix3();
 
+// largest edge of a part, read from its transform (every base shape is about one unit across)
+function partSize(m) {
+  const e = m.elements;
+  return Math.max(Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10]));
+}
 export class Builder {
   constructor() { this.parts = [[], [], []]; this.smoke = []; this.lights = []; }
   // glow: 0 plain, 1 lit at night, 2 window glass (rand decides how late its light stays on)
@@ -165,9 +170,11 @@ export class Builder {
     for (const p of other.lights) this.lights.push(new THREE.Vector3(...p).applyMatrix4(matrix));
     return this;
   }
-  build(shadows = true) {
+  // lite: the far-away version of a chunk, without the tiny parts (window frames, sills, props) you cannot see from there
+  build(shadows = true, lite = false) {
     const group = new THREE.Group();
     this.parts.forEach((list, k) => {
+      if (lite && k === 0) list = list.filter(([, , m]) => partSize(m) >= 0.1);
       if (!list.length) return;
       let count = 0;
       for (const [g] of list) count += g.attributes.position.count;
@@ -535,6 +542,99 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 export function serviceBuilding(b, s, r) {
   switch (s) {
+    case 'landfill': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, 0x9a8f78);
+      for (const [x, z, w, d] of [[0, -0.47, 0.96, 0.02], [0, 0.47, 0.96, 0.02], [-0.47, 0, 0.02, 0.96], [0.47, 0, 0.02, 0.96]]) b.box(x, 0, z, w, 0.14, d, 0x6f7780);
+      for (let k = 0; k < 9; k++) {
+        const x = -0.28 + (k % 3) * 0.2 + (r() - 0.5) * 0.06, z = -0.26 + Math.floor(k / 3) * 0.17;
+        b.add(GEO.ico, pick(r, [0x6b6b5a, 0x8a7f62, 0x5d6878, 0x7a8a5a, 0xa58a5a]), x, 0.04, z, 0.2 + r() * 0.1, 0.12 + r() * 0.1, 0.2);
+        b.box(x + 0.05, 0.13, z, 0.04, 0.04, 0.04, pick(r, [0x3f6fb5, 0xd8342a, 0xe0a83a, 0xf2efe6]));
+      }
+      b.box(0.3, 0, 0.32, 0.26, 0.18, 0.2, 0xe9e1d0).box(0.3, 0.18, 0.32, 0.28, 0.02, 0.22, 0x5d6878);
+      b.box(-0.2, 0, 0.32, 0.22, 0.09, 0.1, 0x4f9a5a).box(-0.24, 0.09, 0.32, 0.08, 0.06, 0.1, 0x3d4a5c);
+      break;
+    }
+    case 'incinerator': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_IND);
+      b.box(-0.08, 0, 0.05, 0.66, 0.46, 0.62, 0x8a5a4a).box(-0.08, 0.46, 0.05, 0.68, 0.04, 0.64, 0x4a4f57);
+      b.windows(-0.08, 0.05, 0.66, 0.62, 0.05, 1, 0.3, r, 0.7, 0x3d4a5c);
+      b.add(GEO.cyl, 0xd8d2c4, 0.32, 0, -0.3, 0.16, 1.9, 0.16);
+      for (let k = 1; k <= 2; k++) b.add(GEO.cyl, 0xc0392b, 0.32, 1.9 - k * 0.24, -0.3, 0.165, 0.08, 0.165);
+      b.smoke.push([0.32, 1.95, -0.3]);
+      b.box(-0.3, 0.2, 0.37, 0.18, 0.1, 0.01, 0xffb43c, 1);
+      break;
+    }
+    case 'highschool': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      b.box(-0.05, 0, -0.18, 0.86, 0.66, 0.5, 0xd9b48a).box(-0.05, 0.66, -0.18, 0.89, 0.04, 0.53, 0x7a4a3a);
+      framedWindows(b, r, -0.05, -0.18, 0.86, 0.5, 0.02, 3, 0.21, 0.55, TRIM, false);
+      b.box(-0.05, 0.02, 0.07 + 0.004, 0.2, 0.2, 0.012, 0x7a4a3a).box(-0.05, 0.42, 0.07 + 0.004, 0.36, 0.08, 0.012, 0x2f5fb5);
+      b.box(0.2, 0.004, 0.32, 0.5, 0.012, 0.28, 0xc0623f).box(0.2, 0.012, 0.32, 0.5, 0.004, 0.01, 0xf4efe4);
+      for (const x of [-0.04, 0.44]) b.box(x, 0, 0.32, 0.015, 0.22, 0.015, 0xf4efe4).box(x, 0.2, 0.32, 0.02, 0.06, 0.1, 0xf4efe4);
+      b.tree(-0.36, 0.34, 0.8);
+      break;
+    }
+    case 'university': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
+      b.box(0, 0.005, 0.25, 0.14, 0.02, 0.48, PATH).box(0, 0.005, 0.12, 0.8, 0.02, 0.1, PATH);
+      b.box(0, 0, -0.2, 0.9, 0.52, 0.44, 0xe9dcc4).box(0, 0.52, -0.2, 0.93, 0.04, 0.47, 0xb9ac94);
+      framedWindows(b, r, 0, -0.2, 0.9, 0.44, 0.02, 2, 0.24, 0.5, 0xf8f4ea, true);
+      for (let k = 0; k < 6; k++) b.add(GEO.cyl, 0xf8f6f0, -0.25 + k * 0.1, 0.02, 0.06, 0.04, 0.5, 0.04);
+      b.box(0, 0.52, 0.06, 0.62, 0.05, 0.12, 0xe9dcc4).add(GEO.gable, 0xf2ede2, 0, 0.57, 0.06, 0.64, 0.12, 0.14);
+      b.add(GEO.cyl, 0xe9dcc4, 0, 0.56, -0.2, 0.26, 0.2, 0.26).add(GEO.ico, 0x5f9a8a, 0, 0.76, -0.2, 0.3, 0.26, 0.3);
+      b.box(0, 0.98, -0.2, 0.02, 0.14, 0.02, 0xd9b23a);
+      for (const [x, z] of [[-0.38, 0.38], [0.38, 0.38], [-0.38, 0.2], [0.38, 0.2]]) b.tree(x, z, 0.75);
+      break;
+    }
+    case 'hospital': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      b.box(0, 0, -0.12, 0.9, 0.42, 0.62, 0xf3f2ee).box(0, 0.42, -0.12, 0.92, 0.03, 0.64, 0xbfc4c8);
+      b.box(-0.12, 0.45, -0.18, 0.54, 0.95, 0.44, 0xf8f8f6).box(-0.12, 1.4, -0.18, 0.56, 0.04, 0.46, 0xbfc4c8);
+      b.windows(0, -0.12, 0.9, 0.62, 0, 2, 0.2, r, 0.7, 0x5f87a6);
+      b.windows(-0.12, -0.18, 0.54, 0.44, 0.45, 4, 0.23, r, 0.75, 0x5f87a6);
+      b.add(GEO.cyl, 0x4a4f57, -0.12, 1.44, -0.18, 0.36, 0.01, 0.36).box(-0.12, 1.452, -0.18, 0.04, 0.004, 0.16, 0xf4efe4).box(-0.12, 1.452, -0.18, 0.12, 0.004, 0.04, 0xf4efe4);
+      b.box(0.3, 0.32, 0.2 + 0.004, 0.16, 0.05, 0.012, 0xd33a2f, 1).box(0.3, 0.32, 0.2 + 0.004, 0.05, 0.16, 0.012, 0xd33a2f, 1);
+      b.box(0.1, 0, 0.32, 0.5, 0.18, 0.12, 0xd8d2c4).box(0.1, 0.18, 0.34, 0.56, 0.02, 0.2, 0xd33a2f);
+      car(b, -0.3, 0.38, 0xf4f4f4, 0xd33a2f);
+      break;
+    }
+    case 'metro': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      b.box(0, 0.004, 0, 0.6, 0.02, 0.6, 0xbab3a6);
+      b.box(-0.08, 0, 0.02, 0.34, 0.03, 0.4, 0x3b3f46);
+      for (const x of [-0.26, 0.1]) b.box(x, 0, 0.02, 0.02, 0.2, 0.42, 0x6f7780);
+      b.box(-0.08, 0.2, 0.02, 0.44, 0.02, 0.5, 0x9fc6db, 1);
+      b.box(0.3, 0, -0.28, 0.025, 0.6, 0.025, 0x3b3f46).box(0.3, 0.6, -0.28, 0.16, 0.16, 0.03, 0x2f5fb5);
+      b.box(0.3, 0.64, -0.26, 0.09, 0.08, 0.012, 0xf4f4f4, 1);
+      b.box(0.3, 0, 0.3, 0.2, 0.32, 0.16, 0xe9e1d0).box(0.3, 0.32, 0.3, 0.22, 0.02, 0.18, 0x2f5fb5);
+      break;
+    }
+    case 'ferris': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      for (const s of [-1, 1]) {
+        b.add(GEO.box, 0xd8d2c4, -0.18, 0, s * 0.09, 0.03, 1.0, 0.03, 0, 0).add(GEO.box, 0xd8d2c4, 0.18, 0, s * 0.09, 0.03, 1.0, 0.03, 0, 0);
+      }
+      b.box(0, 0.86, 0, 0.42, 0.04, 0.22, 0xd8d2c4);
+      b.box(0, 0, 0.36, 0.5, 0.1, 0.12, 0xe0a83a).box(0, 0.1, 0.36, 0.54, 0.03, 0.16, 0xd33a2f);
+      for (const [x, z] of [[-0.38, -0.36], [0.38, -0.36]]) b.add(GEO.cone, pick(r, [0xd33a2f, 0x3f6fb5, 0x4f9a5a]), x, 0, z, 0.2, 0.3, 0.2).box(x, 0.3, z, 0.02, 0.06, 0.02, 0xfff2c4, 1);
+      break;
+    }
+    case 'landmark': {
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      b.box(0, 0, 0, 0.86, 0.12, 0.86, 0xcfc9bd);
+      const levels = [[0.62, 1.4], [0.5, 1.2], [0.38, 1.0], [0.26, 0.7]];
+      let y = 0.12;
+      for (const [w, h] of levels) {
+        b.box(0, y, 0, w, h, w, 0x9fb7c9);
+        for (let f = 0; f < Math.floor(h / 0.12); f++) b.box(0, y + f * 0.12 + 0.1, 0, w + 0.012, 0.012, w + 0.012, 0xe9eef2);
+        b.windows(0, 0, w, w, y + 0.02, Math.floor(h / 0.12), 0.12, r, 0.6, 0x5f87a6);
+        y += h;
+        b.box(0, y, 0, w + 0.06, 0.04, w + 0.06, 0xe9eef2);
+        y += 0.04;
+      }
+      b.add(GEO.cyl, 0xd8d2c4, 0, y, 0, 0.06, 0.9, 0.06).box(0, y + 0.9, 0, 0.05, 0.05, 0.05, 0xff4b4b, 1);
+      break;
+    }
     case 'police': {
       b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
       b.box(0, 0, -0.1, 0.84, 0.5, 0.6, 0x5d7ea3).box(0, 0.5, -0.1, 0.87, 0.05, 0.63, 0x2f3b4c);
@@ -698,6 +798,23 @@ export function serviceBuilding(b, s, r) {
   }
 }
 
+// Ferris wheel: a ring of spokes and coloured cabins, turned by the animation loop.
+export function ferrisWheel() {
+  const g = new Builder();
+  const R = 0.38, n = 12;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2;
+    g.add(GEO.box, 0xf8f6f0, Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0, R, 0.012, 0.012, 0, 0);
+    g.parts[0][g.parts[0].length - 1][2] = new THREE.Matrix4().compose(new THREE.Vector3(Math.cos(a) * R / 2, Math.sin(a) * R / 2, 0), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, a)), new THREE.Vector3(R, 0.012, 0.012));
+    const b2 = Math.PI * 2 / n;
+    g.parts[0].push([GEO.box, 0xd8d2c4, new THREE.Matrix4().compose(new THREE.Vector3(Math.cos(a + b2 / 2) * R, Math.sin(a + b2 / 2) * R, 0), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, a + b2 / 2 + Math.PI / 2)), new THREE.Vector3(2 * R * Math.sin(b2 / 2), 0.02, 0.03)), 0]);
+    g.add(GEO.box, [0xd33a2f, 0x3f6fb5, 0xe0a83a, 0x4f9a5a][k % 4], Math.cos(a) * R, Math.sin(a) * R - 0.06, 0.06, 0.06, 0.06, 0.06, 0, k % 2);
+    g.add(GEO.box, [0xd33a2f, 0x3f6fb5, 0xe0a83a, 0x4f9a5a][k % 4], Math.cos(a) * R, Math.sin(a) * R - 0.06, -0.06, 0.06, 0.06, 0.06, 0, k % 2);
+  }
+  g.add(GEO.cyl, 0x8d949b, 0, 0, -0.1, 0.06, 0.2, 0.06);
+  g.parts[0][g.parts[0].length - 1][2] = new THREE.Matrix4().compose(new THREE.Vector3(0, 0, -0.1), new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)), new THREE.Vector3(0.06, 0.2, 0.06));
+  return g.build(true);
+}
 // Wind turbine rotor, animated separately from the merged chunk meshes.
 const bladeMat = new THREE.MeshStandardMaterial({ color: 0xf8f6f0, roughness: 0.7, flatShading: true });
 export function windRotor() {

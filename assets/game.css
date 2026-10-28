@@ -304,3 +304,10 @@ body.photo :is(.topbar, .toolbar, .subtools, .ticker, .alerts, .advisor, .toolti
 .alert { animation: slide-in .25s ease-out; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 @media (max-width: 760px) { .subtools.layers { flex-wrap: nowrap; justify-content: flex-start; } }
+
+/* menu: disaster buttons */
+.menu-disasters { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 2px 10px 8px; }
+.menu-disasters small { width: 100%; color: var(--muted); font-weight: 700; }
+.menu .menu-disasters button { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; font-size: .72rem; border: var(--line); border-radius: 10px; background: #fff; }
+.menu .menu-disasters button .i { margin: 0; color: var(--accent); }
+.menu { max-height: calc(100vh - 80px); overflow-y: auto; }

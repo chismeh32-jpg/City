@@ -8,7 +8,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { FX, bodyMat, glassMat, patchSurface, rng } from './buildings.js';
-import { $, HALF, N, RIVER_W, clamp, el, hash, news, riverZ } from './config.js';
+import { HW_Z, $, HALF, N, RIVER_W, clamp, el, hash, news, riverZ } from './config.js';
 import { S } from './state.js';
 
 /* ---------------------------------------------------------------- renderer */
@@ -28,14 +28,14 @@ const SKY_DAY = new THREE.Color(0xcfe3ea), SKY_DUSK = new THREE.Color(0xf0b48a),
 const TOP_DAY = new THREE.Color(0x6fa8dc), TOP_DUSK = new THREE.Color(0x7a6fa8), TOP_NIGHT = new THREE.Color(0x0e1630), TOP_RAIN = new THREE.Color(0x7d8a92);
 scene.fog = new THREE.Fog(SKY_DAY.clone(), 75, 170);
 
-const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.5, 600);
+const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.5, 1600);
 camera.position.set(24, 30, 34);
 const controls = new MapControls(camera, renderer.domElement);
 controls.target.set(0, 0, 3);
 controls.enableDamping = true;
 controls.dampingFactor = 0.12;
 controls.minDistance = 7;
-controls.maxDistance = 80;
+controls.maxDistance = 160;
 controls.minPolarAngle = 0.35;
 controls.maxPolarAngle = 1.22;
 controls.zoomToCursor = true;
@@ -47,7 +47,7 @@ const hemi = new THREE.HemisphereLight(0xe6f1ff, 0x6f8a4c, 1.15);
 const sun = new THREE.DirectionalLight(0xfff0d4, 2.4);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 160 });
+Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 260 }); // follows the view (game3d.js)
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.03;
 sun.shadow.camera.layers.enable(1); // layer 1: invisible cloud shapes that only cast shadows
@@ -79,7 +79,7 @@ const skyMat = new THREE.ShaderMaterial({
       gl_FragColor = vec4(col, 1.0);
     }`,
 });
-const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1100, 32, 16), skyMat);
 sky.renderOrder = -1;
 scene.add(sky);
 
@@ -87,12 +87,13 @@ scene.add(sky);
 function terrainHeight(x, z) {
   const edge = Math.max(Math.abs(x), Math.abs(z)) - (HALF + 2);
   if (edge <= 0) return 0;
+  if (x < 0 && Math.abs(z - (HW_Z - HALF + 0.5)) < 4) return 0; // the motorway runs flat to the horizon
   const rz = riverZ(x + HALF) - HALF, river = clamp((Math.abs(z - rz) - RIVER_W - 1.5) / 6, 0, 1);
   const n = (Math.sin(x * 0.11 + 1.3) * Math.cos(z * 0.09) + Math.sin((x + z) * 0.05) * 0.8 + 1.8) / 3.6;
   return Math.pow(Math.min(edge / 12, 1), 1.5) * (0.8 + n * 5) * river;
 }
 {
-  const G = 220, geo = new THREE.PlaneGeometry(G, G, 140, 140);
+  const G = N + 260, geo = new THREE.PlaneGeometry(G, G, 220, 220);
   geo.rotateX(-Math.PI / 2);
   const p = geo.attributes.position, col = new Float32Array(p.count * 3);
   const a = new THREE.Color(0x93b96c), b = new THREE.Color(0x7aa458), hill = new THREE.Color(0x6f9a52), c = new THREE.Color();
@@ -113,9 +114,9 @@ function terrainHeight(x, z) {
 
   // a ring of distant low-poly mountains, softened by the fog
   const r = rng(77), mat = new THREE.MeshStandardMaterial({ color: 0x7d9a7a, roughness: 1, flatShading: true });
-  for (let k = 0; k < 22; k++) {
-    const ang = (k / 22) * Math.PI * 2 + r() * 0.2, dist = 95 + r() * 25, hgt = 8 + r() * 14;
-    const m = new THREE.Mesh(new THREE.ConeGeometry(10 + r() * 10, hgt, 5 + Math.floor(r() * 3)), mat);
+  for (let k = 0; k < 34; k++) {
+    const ang = (k / 34) * Math.PI * 2 + r() * 0.15, dist = HALF + 95 + r() * 35, hgt = 12 + r() * 22;
+    const m = new THREE.Mesh(new THREE.ConeGeometry(15 + r() * 14, hgt, 5 + Math.floor(r() * 3)), mat);
     m.position.set(Math.cos(ang) * dist, hgt / 2 - 1, Math.sin(ang) * dist);
     m.rotation.y = r() * 3;
     scene.add(m);
@@ -193,6 +194,17 @@ const waterMat = new THREE.ShaderMaterial({
     }`,
 });
 const water = riverStrip(RIVER_W + 0.1, 0.02, waterMat);
+
+/* the motorway continues west beyond the map, towards the rest of the region */
+{
+  const len = 150, z = HW_Z - HALF + 0.5, x = -HALF - len / 2;
+  const road = new THREE.Mesh(new THREE.BoxGeometry(len, 0.025, 1), new THREE.MeshStandardMaterial({ color: 0x4b4e56, roughness: 0.9 }));
+  road.position.set(x, 0.0125, z);
+  road.receiveShadow = true;
+  const median = new THREE.Mesh(new THREE.BoxGeometry(len, 0.04, 0.08), new THREE.MeshStandardMaterial({ color: 0x8cc46a }));
+  median.position.set(x, 0.02, z);
+  scene.add(road, median);
+}
 const WATER_Y = 0.02;
 
 /* drifting clouds that only cast soft moving shadows on the city */
@@ -200,7 +212,7 @@ const cloudShapes = [];
 {
   const mat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
   const r = rng(321);
-  for (let k = 0; k < 7; k++) {
+  for (let k = 0; k < 16; k++) {
     const g = new THREE.Group();
     for (let j = 0; j < 4; j++) {
       const m = new THREE.Mesh(new THREE.IcosahedronGeometry(2 + r() * 2.5, 1), mat);
@@ -209,7 +221,7 @@ const cloudShapes = [];
       m.layers.set(1);
       g.add(m);
     }
-    g.position.set((r() - 0.5) * 80, 16 + r() * 4, (r() - 0.5) * 80);
+    g.position.set((r() - 0.5) * (N + 60), 16 + r() * 4, (r() - 0.5) * (N + 60));
     scene.add(g);
     cloudShapes.push(g);
   }
@@ -217,7 +229,7 @@ const cloudShapes = [];
 function updateClouds(dt) {
   for (const g of cloudShapes) {
     g.position.x += dt * (S.speed ? 0.6 + S.speed * 0.3 : 0.15);
-    if (g.position.x > 55) g.position.x = -55;
+    if (g.position.x > HALF + 30) g.position.x = -HALF - 30;
   }
 }
 

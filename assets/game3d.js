@@ -4,10 +4,11 @@ import { FX, glowMat } from './buildings.js';
 import { LAWS, MIN_PER_SEC, clamp, news } from './config.js';
 import { S, save } from './state.js';
 import { SKY_DAY, SKY_DUSK, SKY_NIGHT, SKY_RAIN, TOP_DAY, TOP_DUSK, TOP_NIGHT, TOP_RAIN, applyGfx, bloom, camera, controls, gfx, hemi, renderFrame, renderer, scene, sky, sun, updateClouds, watchPerformance, waterMat, skyUniforms, refreshEnvironment } from './scene.js';
-import { flushInstances, poolMat, rebuildAll, rebuildDirtyChunks, rotors, updateGrowth } from './world.js';
+import { updateLod, flushInstances, poolMat, rebuildAll, rebuildDirtyChunks, rotors, updateGrowth } from './world.js';
 import { D, checkRank, dayTick, election, hourTick, refresh } from './sim.js';
 import { updateAudio } from './audio.js';
 import { updateLayer } from './layers.js';
+import { rollDisaster, startDisaster, updateEvents } from './events.js';
 import { apply, openModal, pathTiles, placeTicker, renderAdvisor, selectTool, setSpeed, tool, updateHud } from './ui.js';
 import { beamMat, fireworks, updateFireworks, agents, fireCovered, startFire, updateBirds, updateBoats, updateFires, updatePeople, updateRain, updateSmoke, updateTraffic } from './life.js';
 
@@ -18,7 +19,13 @@ function updateLighting(dt) {
   const h = S.minutes / 60, ang = ((h - 6) / 12) * Math.PI, elev = Math.sin(ang);
   const day = clamp(elev * 1.6 + 0.15, 0, 1), dusk = clamp(1 - Math.abs(elev) * 3, 0, 1) * (elev > -0.2 ? 1 : 0);
   const wetSky = S.weather === 'rain' ? 1 : 0;
-  sun.position.set(Math.cos(ang) * 40, Math.max(8, elev * 50), 22);
+  // the sun and its shadow box follow the point the camera looks at, sized to what is on screen
+  const t = controls.target, dist = camera.position.distanceTo(t), box = clamp(dist * 0.8, 24, 85);
+  sun.position.set(t.x + Math.cos(ang) * 60, Math.max(12, elev * 75), t.z + 33);
+  sun.target.position.set(t.x, 0, t.z);
+  sun.target.updateMatrixWorld();
+  const sc = sun.shadow.camera;
+  if (Math.abs(sc.right - box) > 2) { Object.assign(sc, { left: -box, right: box, top: box, bottom: -box }); sc.updateProjectionMatrix(); }
   sun.intensity = (0.5 + 1.95 * day) * (wetSky ? 0.55 : 1);
   sun.color.setHex(0x9fb4ff).lerp(new THREE.Color(0xfff0d4), day).lerp(new THREE.Color(0xffb27a), dusk * 0.7);
   hemi.intensity = (0.5 + 0.7 * day) * (gfx === 'ultra' ? 0.55 : 1);
@@ -29,7 +36,7 @@ function updateLighting(dt) {
   skyUniforms.horizon.value.copy(tmpSky);
   skyUniforms.top.value.copy(tmpTop);
   skyUniforms.ground.value.setHex(0x5d7448).multiplyScalar(0.25 + 0.75 * day);
-  skyUniforms.sunDir.value.copy(sun.position).normalize();
+  skyUniforms.sunDir.value.copy(sun.position).sub(sun.target.position).normalize();
   skyUniforms.sunCol.value.copy(sun.color);
   skyUniforms.uStars.value = wetSky ? 0.15 : 1;
   scene.fog.color.copy(tmpSky);
@@ -51,8 +58,8 @@ function updateLighting(dt) {
   w.uTime.value = performance.now() / 1000;
   w.uLight.value = 0.15 + 0.85 * day;
   w.uSky.value.copy(tmpSky);
-  w.uSun.value.copy(sun.position).normalize();
-  scene.fog.near = 75; scene.fog.far = 170;
+  w.uSun.value.copy(skyUniforms.sunDir.value);
+  scene.fog.near = 50 + dist * 0.9; scene.fog.far = 140 + dist * 2.2;
   return day;
 }
 
@@ -64,20 +71,22 @@ function frame() {
   if (S.speed) {
     const before = Math.floor(S.minutes / 60);
     S.minutes += dt * MIN_PER_SEC[S.speed];
-    if (S.minutes >= 1440) { S.minutes -= 1440; dayTick(); }
+    if (S.minutes >= 1440) { S.minutes -= 1440; dayTick(); rollDisaster(); }
     const after = Math.floor(S.minutes / 60);
     if (after !== before) hourTick();
   }
   updateGrowth(dt);
   rebuildDirtyChunks();
+  updateLod(camera);
   updateTraffic(dt);
   updatePeople(dt);
   updateBoats(dt);
   updateBirds(dt);
-  for (const h of rotors.values()) h.userData.rotor.rotation.z += dt * (S.speed ? 1.6 + S.speed * 0.4 : 0.4);
+  for (const h of rotors.values()) h.userData.rotor.rotation.z += dt * h.userData.speed * (S.speed ? 1.6 + S.speed * 0.4 : 0.4);
   updateSmoke(dt);
   updateFires(dt);
   updateFireworks(dt);
+  updateEvents(dt);
   updateRain(dt);
   const day = updateLighting(dt);
   refreshEnvironment();
@@ -118,5 +127,5 @@ updateHud();
 placeTicker();
 news(D.pop ? `Bienvenido de nuevo a ${S.name}.` : 'Bienvenida, alcaldía. Empieza trazando una calle junto al río.');
 if (!S.party) openModal('partyModal');
-window.__urbania = { renderer, scene, camera, controls, election, LAWS, agents, startFire, fireCovered, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, dayTick, setSpeed, fireworks, updateFireworks, setWet: (v) => { wet = v; } };
+window.__urbania = { renderer, scene, camera, controls, election, LAWS, agents, startFire, fireCovered, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, dayTick, setSpeed, startDisaster, fireworks, updateFireworks, setWet: (v) => { wet = v; } };
 frame();

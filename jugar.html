@@ -57,6 +57,7 @@
     <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 7l6 6 4-4 8 8M21 11v6h-6"/></symbol>
     <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4M12 17.2v.3"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></symbol><symbol id="i-bin" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol><symbol id="i-incinerator" viewBox="0 0 24 24"><path d="M4 20V10l5-3v3l5-3v3l5-3v13zM2 20h20"/><path d="M17 7V3h2v5"/><path d="M11 17c-1.2-.8-1.2-2.2 0-3 .2 1 1.5 1 1.5 0 1.2.8 1.2 2.2 0 3z"/></symbol><symbol id="i-graduation" viewBox="0 0 24 24"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2.5 9 2.5 12 0v-5M22 9v6"/></symbol><symbol id="i-university" viewBox="0 0 24 24"><path d="M3 9l9-5 9 5zM5 9v8M9 9v8M15 9v8M19 9v8M3 20h18M3 17h18"/><circle cx="12" cy="6.7" r=".8"/></symbol><symbol id="i-hospital" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="1.5"/><path d="M12 8.5v6M9 11.5h6M9 20v-3h6v3"/></symbol><symbol id="i-metro" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7.5 16.5V8l4.5 5 4.5-5v8.5"/></symbol><symbol id="i-landmark" viewBox="0 0 24 24"><path d="M12 2l2 4v14h-4V6zM8 20V10h2M16 20V10h-2M5 22h14"/><path d="M12 9v2M12 13v2"/></symbol><symbol id="i-meteor" viewBox="0 0 24 24"><circle cx="15" cy="15" r="5"/><path d="M11 11L3 3M13.5 9.5L8 4M9.5 13.5L4 8"/></symbol><symbol id="i-quake" viewBox="0 0 24 24"><path d="M2 12h3l2-5 3 10 3-12 3 9 2-4h4"/></symbol><symbol id="i-tornado" viewBox="0 0 24 24"><path d="M3 4h18M5 8h14M7 12h10M9 16h6M11 20h3"/></symbol><symbol id="i-highway" viewBox="0 0 24 24"><path d="M7 3L3 21M17 3l4 18M12 4v2M12 9v2M12 14v2M12 19v2"/><path d="M9.5 3l-1 18M14.5 3l1 18" stroke-dasharray="1 2"/></symbol><symbol id="i-shield2" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></symbol><symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.2"/></symbol>
     <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.3"/></symbol>
     <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3"/></symbol>
     <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.8-1 1.3-2-.6-1.2.2-2.6 1.6-2.6H17a4 4 0 0 0 4-4c0-5-4-9.4-9-9.4z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/></symbol>
@@ -120,6 +121,12 @@
     <button id="photoBtn"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg> Modo foto <small>(H)</small></button>
     <button id="snapBtn"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg> Guardar captura <small>(P)</small></button>
     <button id="helpBtn"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg> Atajos de teclado <small>(?)</small></button>
+    <label class="menu-row"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg> Desastres naturales <input type="checkbox" id="disasterToggle"></label>
+    <div class="menu-disasters"><small>Provocar:</small>
+      <button id="dis-meteor" title="Provocar un meteorito"><svg class="i" aria-hidden="true"><use href="#i-meteor"/></svg> Meteorito</button>
+      <button id="dis-tornado" title="Provocar un tornado"><svg class="i" aria-hidden="true"><use href="#i-tornado"/></svg> Tornado</button>
+      <button id="dis-quake" title="Provocar un terremoto"><svg class="i" aria-hidden="true"><use href="#i-quake"/></svg> Terremoto</button>
+    </div>
     <button id="newCity"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg> Nueva ciudad</button>
   </nav>
 
@@ -267,7 +274,7 @@
     <div class="card">
       <button class="x" data-close aria-label="Cerrar">✕</button>
       <h2 id="hpTitle"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg> Atajos de teclado</h2>
-      <ul class="keys"><li><kbd>1 … 7</kbd><span>Categorías de herramientas</span></li><li><kbd>Q / E</kbd><span>Girar la cámara</span></li><li><kbd>Flechas</kbd><span>Mover la cámara</span></li><li><kbd>Rueda</kbd><span>Zoom</span></li><li><kbd>Espacio</kbd><span>Pausa / continuar</span></li><li><kbd>Ctrl + Z</kbd><span>Deshacer</span></li><li><kbd>L</kbd><span>Mostrar capas de información</span></li><li><kbd>H</kbd><span>Modo foto (oculta la interfaz)</span></li><li><kbd>P</kbd><span>Guardar una captura en PNG</span></li><li><kbd>M</kbd><span>Activar o silenciar el sonido</span></li><li><kbd>G</kbd><span>Estadísticas</span></li><li><kbd>?</kbd><span>Esta ayuda</span></li><li><kbd>F11</kbd><span>Pantalla completa</span></li><li><kbd>Esc</kbd><span>Cerrar paneles / soltar herramienta</span></li></ul>
+      <ul class="keys"><li><kbd>1 … 8</kbd><span>Categorías de herramientas</span></li><li><kbd>Q / E</kbd><span>Girar la cámara</span></li><li><kbd>Flechas</kbd><span>Mover la cámara</span></li><li><kbd>Rueda</kbd><span>Zoom</span></li><li><kbd>Espacio</kbd><span>Pausa / continuar</span></li><li><kbd>Ctrl + Z</kbd><span>Deshacer</span></li><li><kbd>L</kbd><span>Mostrar capas de información</span></li><li><kbd>H</kbd><span>Modo foto (oculta la interfaz)</span></li><li><kbd>P</kbd><span>Guardar una captura en PNG</span></li><li><kbd>M</kbd><span>Activar o silenciar el sonido</span></li><li><kbd>G</kbd><span>Estadísticas</span></li><li><kbd>?</kbd><span>Esta ayuda</span></li><li><kbd>F11</kbd><span>Pantalla completa</span></li><li><kbd>Esc</kbd><span>Cerrar paneles / soltar herramienta</span></li></ul>
       <p class="note">Consejo: con la herramienta <b>Mirar</b> haz clic en cualquier casilla para ver quién vive allí y qué le falta para crecer.</p>
     </div>
   </div>
