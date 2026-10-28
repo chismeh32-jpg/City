@@ -30,6 +30,71 @@ export function setStyle(id) { STYLE = STYLES[id] || STYLES.clasico; }
 /* ---------------------------------------------------------------- merged low-poly builder */
 export const bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, flatShading: true });
 export const glowMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: 0xffc977, emissiveIntensity: 0 });
+// lit parts glow in their own colour (warm lamps, red tail lights, cool shop windows)
+glowMat.onBeforeCompile = (shader) => {
+  shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+    #ifdef USE_COLOR
+      totalEmissiveRadiance *= mix(vec3(1.0), vColor.rgb / max(max(vColor.r, vColor.g), max(vColor.b, 0.001)), 0.7);
+    #endif`);
+};
+// window glass: shiny by day; at night each window lights up on its own (aRand < share of lit windows)
+export const glassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0 });
+
+// uniforms shared by the patched materials, updated every frame by the lighting code
+export const FX = {
+  uTime: { value: 0 }, uNight: { value: 0 }, uLitShare: { value: 1 }, // windows
+  uDetail: { value: 0 }, uWet: { value: 0 },                           // ultra: surface grain and wet streets
+  uWind: { value: 1 },                                                 // tree sway
+};
+const NOISE_GLSL = `
+  float fxHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float fxNoise(vec3 x) {
+    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(fxHash(i), fxHash(i + vec3(1, 0, 0)), f.x), mix(fxHash(i + vec3(0, 1, 0)), fxHash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(fxHash(i + vec3(0, 0, 1)), fxHash(i + vec3(1, 0, 1)), f.x), mix(fxHash(i + vec3(0, 1, 1)), fxHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }`;
+// world position varying for a patched standard material
+function withWorldPos(shader) {
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nvarying vec3 vFxW;')
+    .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvFxW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vFxW;' + NOISE_GLSL);
+}
+// buildings, roads and lots: fine grain and grime (ultra), wet roofs and streets with puddles when it rains
+export function patchSurface(mat, strength = 1) {
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, { uDetail: FX.uDetail, uWet: FX.uWet });
+    withWorldPos(shader);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uDetail; uniform float uWet;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float fxN = fxNoise(vFxW * 9.0) * 0.6 + fxNoise(vFxW * 31.0) * 0.4;
+        float fxGrime = fxNoise(vFxW * 2.3 + vec3(0.0, vFxW.y * 3.0, 0.0));
+        diffuseColor.rgb *= 1.0 + uDetail * ${(0.11 * strength).toFixed(3)} * (fxN - 0.5) - uDetail * ${(0.06 * strength).toFixed(3)} * smoothstep(0.55, 0.9, fxGrime);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        vec3 fxUp = normalize(cross(dFdx(vFxW), dFdy(vFxW))); // world-space face normal (normal is not set up yet here)
+        float fxFlat = smoothstep(0.75, 0.95, abs(fxUp.y));
+        float fxPuddle = smoothstep(0.58, 0.68, fxNoise(vFxW * 1.7));
+        roughnessFactor = mix(roughnessFactor, mix(0.32, 0.04, fxPuddle), uWet * fxFlat);
+        diffuseColor.rgb *= 1.0 - uWet * fxFlat * (0.18 + 0.2 * fxPuddle);`);
+  };
+}
+patchSurface(bodyMat);
+glassMat.onBeforeCompile = (shader) => {
+  Object.assign(shader.uniforms, { uNight: FX.uNight, uLitShare: FX.uLitShare, uTime: FX.uTime });
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float aRand; varying float vRand;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRand = aRand;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nuniform float uNight; uniform float uLitShare; uniform float uTime; varying float vRand;')
+    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      float fxLit = step(vRand, uLitShare) * uNight;
+      float fxTint = fract(vRand * 7.31);
+      vec3 fxCol = fxTint < 0.72 ? vec3(1.0, 0.76, 0.42) : fxTint < 0.9 ? vec3(1.0, 0.9, 0.7) : vec3(0.62, 0.78, 1.0);
+      fxCol *= fxTint > 0.97 ? 0.75 + 0.25 * sin(uTime * 9.0 + vRand * 50.0) : 1.0; // the odd television
+      totalEmissiveRadiance += fxCol * fxLit * 1.15;
+      diffuseColor.rgb *= 1.0 - fxLit * 0.6;`);
+};
 
 // drop the downward-facing face of a non-indexed box (vertices 18–23): ~17 % fewer triangles in every building
 function withoutBottom(g) {
@@ -63,12 +128,14 @@ export const GEO = {
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color(), _n3 = new THREE.Matrix3();
 
 export class Builder {
-  constructor() { this.parts = [[], []]; this.smoke = []; }
-  add(geo, color, x, y, z, sx, sy, sz, ry = 0, glow = 0) {
+  constructor() { this.parts = [[], [], []]; this.smoke = []; this.lights = []; }
+  // glow: 0 plain, 1 lit at night, 2 window glass (rand decides how late its light stays on)
+  add(geo, color, x, y, z, sx, sy, sz, ry = 0, glow = 0, rand = 0) {
     _e.set(0, ry, 0); _q.setFromEuler(_e);
-    this.parts[glow].push([geo, color, _m.compose(_v.set(x, y, z), _q, _s.set(sx, sy, sz)).clone()]);
+    this.parts[glow].push([geo, color, _m.compose(_v.set(x, y, z), _q, _s.set(sx, sy, sz)).clone(), rand]);
     return this;
   }
+  pane(x, y, z, w, h, d, color, rand) { return this.add(GEO.box, color, x, y, z, w, h, d, 0, 2, rand); }
   box(x, y, z, w, h, d, color, glow = 0) { return this.add(GEO.box, color, x, y, z, w, h, d, 0, glow); }
   tree(x, z, s, color = 0x6c9c4c) {
     this.add(GEO.cyl6, 0x7a5638, x, 0, z, 0.05 * s, 0.25 * s, 0.05 * s);
@@ -83,9 +150,9 @@ export class Builder {
         for (let k = 0; k < n; k++) {
           const o = -len / 2 + (k + 0.5) * (len / n);
           for (const side of [-1, 1]) {
-            const glow = r() < lit ? 1 : 0;
-            if (axis === 'x') this.box(cx + o, y, cz + side * (other / 2 + 0.004), 0.075, fh * 0.4, 0.012, color, glow);
-            else this.box(cx + side * (other / 2 + 0.004), y, cz + o, 0.012, fh * 0.4, 0.075, color, glow);
+            const rand = r() / Math.max(0.05, lit);
+            if (axis === 'x') this.pane(cx + o, y, cz + side * (other / 2 + 0.004), 0.075, fh * 0.4, 0.012, color, rand);
+            else this.pane(cx + side * (other / 2 + 0.004), y, cz + o, 0.012, fh * 0.4, 0.075, color, rand);
           }
         }
       }
@@ -93,8 +160,9 @@ export class Builder {
   }
   // append another builder's parts, transformed by matrix (used to batch tiles into chunks)
   merge(other, matrix) {
-    other.parts.forEach((list, k) => { for (const [g, c, m] of list) this.parts[k].push([g, c, matrix.clone().multiply(m)]); });
+    other.parts.forEach((list, k) => { for (const [g, c, m, rand] of list) this.parts[k].push([g, c, matrix.clone().multiply(m), rand]); });
     for (const p of other.smoke) this.smoke.push(new THREE.Vector3(...p).applyMatrix4(matrix));
+    for (const p of other.lights) this.lights.push(new THREE.Vector3(...p).applyMatrix4(matrix));
     return this;
   }
   build(shadows = true) {
@@ -104,8 +172,10 @@ export class Builder {
       let count = 0;
       for (const [g] of list) count += g.attributes.position.count;
       const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), col = new Float32Array(count * 3);
+      const rnd = k === 2 ? new Float32Array(count) : null;
       let o = 0;
-      for (const [g, color, m] of list) {
+      for (const [g, color, m, rand] of list) {
+        if (rnd) rnd.fill(rand, o / 3, o / 3 + g.attributes.position.count);
         _c.set(color);
         _n3.getNormalMatrix(m);
         const p = g.attributes.position, n = g.attributes.normal;
@@ -121,8 +191,9 @@ export class Builder {
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      if (rnd) geo.setAttribute('aRand', new THREE.BufferAttribute(rnd, 1));
       geo.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geo, k ? glowMat : bodyMat);
+      const mesh = new THREE.Mesh(geo, [bodyMat, glowMat, glassMat][k]);
       mesh.castShadow = shadows;
       mesh.receiveShadow = true;
       group.add(mesh);
@@ -143,7 +214,7 @@ function framedWindow(b, r, x, y, z, face, w, h, lit, frame = TRIM) {
   const along = face === 'x' ? [0.012, w] : [w, 0.012];
   b.box(x, y - 0.01, z, along[0] + (face === 'x' ? 0.004 : 0.02), h + 0.02, along[1] + (face === 'x' ? 0.02 : 0.004), frame);
   const gx = face === 'x' ? Math.sign(x) * 0.004 : 0, gz = face === 'z' ? Math.sign(z) * 0.004 : 0;
-  b.box(x + gx, y, z + gz, along[0], h, along[1], GLASS_DARK, r() < lit ? 1 : 0);
+  b.pane(x + gx, y, z + gz, along[0], h, along[1], GLASS_DARK, r() / Math.max(0.05, lit));
   b.box(x + gx * 2, y - 0.018, z + gz * 2, face === 'x' ? 0.02 : w + 0.03, 0.012, face === 'x' ? w + 0.03 : 0.02, frame);
 }
 // framed windows on every face of a w×d block; skips the front-centre ground-floor slot for the door

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Jugar — Urbania</title>
   <meta name="description" content="Construye tu ciudad en 3D directamente en el navegador.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="preload" href="assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/fonts.css">
   <link rel="stylesheet" href="assets/game.css">
   <script type="importmap">
     { "imports": { "three": "./assets/vendor/three.module.min.js", "three/addons/": "./assets/vendor/addons/" } }
@@ -267,7 +267,7 @@
     <div class="card">
       <button class="x" data-close aria-label="Cerrar">✕</button>
       <h2 id="hpTitle"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg> Atajos de teclado</h2>
-      <ul class="keys"><li><kbd>1 … 7</kbd><span>Categorías de herramientas</span></li><li><kbd>Q / E</kbd><span>Girar la cámara</span></li><li><kbd>Flechas</kbd><span>Mover la cámara</span></li><li><kbd>Rueda</kbd><span>Zoom</span></li><li><kbd>Espacio</kbd><span>Pausa / continuar</span></li><li><kbd>Ctrl + Z</kbd><span>Deshacer</span></li><li><kbd>L</kbd><span>Mostrar capas de información</span></li><li><kbd>H</kbd><span>Modo foto (oculta la interfaz)</span></li><li><kbd>P</kbd><span>Guardar una captura en PNG</span></li><li><kbd>M</kbd><span>Activar o silenciar el sonido</span></li><li><kbd>G</kbd><span>Estadísticas</span></li><li><kbd>?</kbd><span>Esta ayuda</span></li><li><kbd>Esc</kbd><span>Cerrar paneles / soltar herramienta</span></li></ul>
+      <ul class="keys"><li><kbd>1 … 7</kbd><span>Categorías de herramientas</span></li><li><kbd>Q / E</kbd><span>Girar la cámara</span></li><li><kbd>Flechas</kbd><span>Mover la cámara</span></li><li><kbd>Rueda</kbd><span>Zoom</span></li><li><kbd>Espacio</kbd><span>Pausa / continuar</span></li><li><kbd>Ctrl + Z</kbd><span>Deshacer</span></li><li><kbd>L</kbd><span>Mostrar capas de información</span></li><li><kbd>H</kbd><span>Modo foto (oculta la interfaz)</span></li><li><kbd>P</kbd><span>Guardar una captura en PNG</span></li><li><kbd>M</kbd><span>Activar o silenciar el sonido</span></li><li><kbd>G</kbd><span>Estadísticas</span></li><li><kbd>?</kbd><span>Esta ayuda</span></li><li><kbd>F11</kbd><span>Pantalla completa</span></li><li><kbd>Esc</kbd><span>Cerrar paneles / soltar herramienta</span></li></ul>
       <p class="note">Consejo: con la herramienta <b>Mirar</b> haz clic en cualquier casilla para ver quién vive allí y qué le falta para crecer.</p>
     </div>
   </div>

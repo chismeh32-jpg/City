@@ -77,6 +77,7 @@ function sfx(name) {
     case 'rank': [523, 659, 784, 1047, 1319].forEach((f, k) => tone(f, k * 0.09, 0.5, { vol: 0.11, type: 'triangle' })); tone(2093, 0.5, 0.6, { vol: 0.05 }); break;
     case 'alert': tone(330, 0, 0.12, { vol: 0.1, type: 'square' }); tone(262, 0.15, 0.16, { vol: 0.1, type: 'square' }); break;
     case 'siren': for (let k = 0; k < 3; k++) tone(620, k * 0.5, 0.5, { vol: 0.06, to: 900 }); break;
+    case 'boom': burst(0, 0.7, 900, 0.22, 120); tone(70, 0, 0.4, { vol: 0.16, to: 40 }); burst(0.12, 0.5, 5000, 0.05, 2500); break;
     case 'cash': tone(1318, 0, 0.08, { vol: 0.08 }); tone(1760, 0.07, 0.15, { vol: 0.08 }); break;
   }
 }

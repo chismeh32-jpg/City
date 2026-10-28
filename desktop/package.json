@@ -1,0 +1,62 @@
+{
+  "name": "urbania",
+  "version": "1.0.0",
+  "description": "Urbania: constructor de ciudades en 3D",
+  "main": "main.js",
+  "author": "Urbania",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "web": "node copy-web.js",
+    "start": "npm run web && electron .",
+    "dist": "npm run web && electron-builder --win --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.0.20"
+  },
+  "build": {
+    "appId": "com.urbania.game",
+    "productName": "Urbania",
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.png",
+      "web/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Urbania",
+      "artifactName": "Urbania-Instalador.exe"
+    },
+    "portable": {
+      "artifactName": "Urbania-Portable.exe"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chismeh32-jpg/City.git"
+  }
+}

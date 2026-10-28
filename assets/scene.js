@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { rng } from './buildings.js';
+import { FX, bodyMat, glassMat, patchSurface, rng } from './buildings.js';
 import { $, HALF, N, RIVER_W, clamp, el, hash, news, riverZ } from './config.js';
 import { S } from './state.js';
 
@@ -54,12 +54,32 @@ sun.shadow.camera.layers.enable(1); // layer 1: invisible cloud shapes that only
 scene.add(hemi, sun, sun.target);
 
 /* sky dome with a vertical gradient (horizon colour doubles as fog colour) */
-const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.ShaderMaterial({
-  side: THREE.BackSide, depthWrite: false, fog: false,
-  uniforms: { top: { value: TOP_DAY.clone() }, horizon: { value: SKY_DAY.clone() } },
+// also: a glow around the sun, a sun disc, stars at night and a darker ground below the horizon
+const skyUniforms = {
+  top: { value: TOP_DAY.clone() }, horizon: { value: SKY_DAY.clone() }, ground: { value: new THREE.Color(0x5d7448) },
+  sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunCol: { value: new THREE.Color(0xfff0d4) }, uNight: FX.uNight, uStars: { value: 1 },
+};
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyUniforms,
   vertexShader: 'varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying vec3 vDir; void main() { float h = clamp(vDir.y, 0.0, 1.0); gl_FragColor = vec4(mix(horizon, top, smoothstep(0.0, 0.45, h)), 1.0); }',
-}));
+  fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 ground; uniform vec3 sunDir; uniform vec3 sunCol; uniform float uNight; uniform float uStars;
+    varying vec3 vDir;
+    float hash3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+    void main() {
+      vec3 d = normalize(vDir);
+      float h = clamp(d.y, 0.0, 1.0);
+      vec3 col = mix(horizon, top, smoothstep(0.0, 0.45, h));
+      col = mix(col, ground, smoothstep(0.0, -0.12, d.y));
+      float s = max(dot(d, normalize(sunDir)), 0.0);
+      col += sunCol * (pow(s, 8.0) * 0.25 + pow(s, 64.0) * 0.5) * (1.0 - uNight);
+      col += sunCol * smoothstep(0.9993, 0.9996, s) * 2.0 * (1.0 - uNight);
+      vec3 cell = floor(d * 260.0);
+      float star = step(0.9965, hash3(cell)) * smoothstep(0.05, 0.3, d.y);
+      col += vec3(0.9, 0.95, 1.0) * star * uNight * uStars * (0.5 + 0.5 * hash3(cell + 7.0));
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat);
 sky.renderOrder = -1;
 scene.add(sky);
 
@@ -85,7 +105,9 @@ function terrainHeight(x, z) {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.computeVertexNormals();
-  const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
+  const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true });
+  patchSurface(groundMat, 2.2);
+  const ground = new THREE.Mesh(geo, groundMat);
   ground.receiveShadow = true;
   scene.add(ground);
 
@@ -136,15 +158,17 @@ const waterMat = new THREE.ShaderMaterial({
   uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
     uTime: { value: 0 }, uLight: { value: 1 }, uDeep: { value: new THREE.Color(0x2f6f9f) }, uShallow: { value: new THREE.Color(0x6fb6d8) },
     uSky: { value: new THREE.Color(0xcfe3ea) }, uSun: { value: new THREE.Vector3(0, 1, 0) },
+    tReflect: { value: null }, uReflMat: { value: new THREE.Matrix4() }, uReflect: { value: 0 },
   }]),
-  vertexShader: `varying vec2 vUv; varying vec3 vW;
+  vertexShader: `varying vec2 vUv; varying vec3 vW; varying vec4 vRefl; uniform mat4 uReflMat;
     #include <fog_pars_vertex>
-    void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
+    void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vRefl = uReflMat * w;
       vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;
       #include <fog_vertex>
     }`,
   fragmentShader: `uniform float uTime; uniform float uLight; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSun;
-    varying vec2 vUv; varying vec3 vW;
+    uniform sampler2D tReflect; uniform float uReflect;
+    varying vec2 vUv; varying vec3 vW; varying vec4 vRefl;
     #include <fog_pars_fragment>
     void main() {
       float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
@@ -154,7 +178,12 @@ const waterMat = new THREE.ShaderMaterial({
       vec3 n = normalize(vec3((w1 + w2) * 0.12, 1.0, (w1 - w2) * 0.12));
       vec3 v = normalize(cameraPosition - vW);
       float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-      col = mix(col, uSky, fres * 0.6);
+      if (uReflect > 0.5) {
+        // ultra: real mirror image of the city and sky, rippled by the waves
+        vec4 rp = vRefl; rp.xy += n.xz * 0.9 * rp.w * 0.06;
+        vec3 refl = texture2DProj(tReflect, rp).rgb;
+        col = mix(col * 0.75, refl, 0.35 + 0.5 * fres);
+      } else col = mix(col, uSky, fres * 0.6);
       float spec = pow(max(dot(reflect(-normalize(uSun), n), v), 0.0), 60.0);
       col += vec3(1.0, 0.95, 0.85) * spec * 1.4 * uLight;
       float foam = smoothstep(0.18, 0.0, across) * (0.5 + 0.5 * sin(vW.x * 6.0 + uTime * 2.0 + vW.z * 3.0));
@@ -163,7 +192,8 @@ const waterMat = new THREE.ShaderMaterial({
       #include <fog_fragment>
     }`,
 });
-riverStrip(RIVER_W + 0.1, 0.02, waterMat);
+const water = riverStrip(RIVER_W + 0.1, 0.02, waterMat);
+const WATER_Y = 0.02;
 
 /* drifting clouds that only cast soft moving shadows on the city */
 const cloudShapes = [];
@@ -192,12 +222,22 @@ function updateClouds(dt) {
 }
 
 /* ---------------------------------------------------------------- post-processing & quality */
+// ultra: alta + sky reflections, mirror river, surface grain, 4K shadows and colour grading (for desktop graphics cards)
 // alta: ambient occlusion + bloom + tilt-shift · media: bloom + tilt-shift · baja: plain render
 const GFX_KEY = 'urbania-gfx';
-const GFX_LEVELS = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+const GFX_LEVELS = { ultra: 'Ultra', alta: 'Alta', media: 'Media', baja: 'Baja' };
+// a dedicated desktop graphics card (or the desktop app) starts on ultra
+function strongGpu() {
+  if (window.urbaniaDesktop) return true;
+  try {
+    const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+    return /RTX|GTX (10[6-8]0|16[5-6]0)|Radeon RX ?[5-7]\d{3}|RX [5-9]\d{2,3}|Arc A[57]/i.test(name);
+  } catch { return false; }
+}
 let gfx = (() => { try { return localStorage.getItem(GFX_KEY); } catch { return null; } })();
 const gfxChosen = !!gfx;
-if (!GFX_LEVELS[gfx]) gfx = matchMedia('(pointer: coarse)').matches ? 'media' : 'alta';
+if (!GFX_LEVELS[gfx]) gfx = matchMedia('(pointer: coarse)').matches ? 'media' : strongGpu() ? 'ultra' : 'alta';
 
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
 composer.addPass(new RenderPass(scene, camera));
@@ -210,9 +250,9 @@ const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.
 composer.addPass(bloom);
 const finish = new ShaderPass({
   uniforms: { tDiffuse: { value: null }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) }, uFocus: { value: 0.5 },
-    uBand: { value: 0.16 }, uBlur: { value: 4 }, uSat: { value: 1.08 }, uVig: { value: 0.35 } },
+    uBand: { value: 0.16 }, uBlur: { value: 4 }, uSat: { value: 1.08 }, uVig: { value: 0.35 }, uGrade: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uFocus; uniform float uBand; uniform float uBlur; uniform float uSat; uniform float uVig;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 uRes; uniform float uFocus; uniform float uBand; uniform float uBlur; uniform float uSat; uniform float uVig; uniform float uGrade;
     varying vec2 vUv;
     void main() {
       vec4 c = texture2D(tDiffuse, vUv);
@@ -227,6 +267,14 @@ const finish = new ShaderPass({
       }
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, uSat);
+      if (uGrade > 0.0) {
+        // ultra colour grade: gentle S-curve, cool shadows, warm highlights
+        vec3 g = c.rgb / (1.0 + c.rgb);
+        vec3 s = g * g * (3.0 - 2.0 * g);
+        g = mix(g, s, 0.35);
+        g += vec3(-0.012, 0.0, 0.02) * (1.0 - smoothstep(0.0, 0.45, l)) + vec3(0.022, 0.01, -0.016) * smoothstep(0.45, 1.0, l);
+        c.rgb = mix(c.rgb, g / max(1.0 - g, vec3(0.001)), uGrade);
+      }
       float d = length((vUv - 0.5) * vec2(1.2, 1.0));
       c.rgb *= mix(1.0, smoothstep(0.95, 0.35, d), uVig);
       gl_FragColor = c;
@@ -235,16 +283,70 @@ const finish = new ShaderPass({
 composer.addPass(finish);
 composer.addPass(new OutputPass());
 
+/* ultra: image-based lighting from the current sky (refreshed every few seconds as the day turns) */
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+envScene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), skyMat));
+let envRT = null;
+function envTexture() {
+  if (envRT) envRT.dispose();
+  envRT = pmrem.fromScene(envScene, 0, 0.1, 200);
+  return envRT.texture;
+}
+// timed in real seconds, so slow frames never leave a daytime sky lighting the night
+let envStamp = performance.now();
+function refreshEnvironment() {
+  const now = performance.now();
+  if (gfx !== 'ultra' || now - envStamp < 2000) return;
+  envStamp = now;
+  scene.environment = envTexture();
+}
+
+/* ultra: the river mirrors the city — the scene is drawn again from below the water into a texture */
+const reflRT = new THREE.WebGLRenderTarget(512, 512, { type: THREE.HalfFloatType });
+const reflCam = new THREE.PerspectiveCamera();
+const reflClip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER_Y)];
+const BIAS = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+function renderReflection() {
+  reflCam.copy(camera);
+  reflCam.position.set(camera.position.x, 2 * WATER_Y - camera.position.y, camera.position.z);
+  reflCam.up.set(0, 1, 0);
+  reflCam.lookAt(controls.target.x, 2 * WATER_Y - controls.target.y, controls.target.z);
+  reflCam.updateMatrixWorld();
+  waterMat.uniforms.uReflMat.value.copy(BIAS).multiply(reflCam.projectionMatrix).multiply(reflCam.matrixWorldInverse);
+  waterMat.uniforms.tReflect.value = reflRT.texture;
+  const prev = renderer.getRenderTarget();
+  water.visible = false;
+  sky.position.copy(reflCam.position);
+  renderer.clippingPlanes = reflClip;
+  renderer.setRenderTarget(reflRT);
+  renderer.clear();
+  renderer.render(scene, reflCam);
+  renderer.setRenderTarget(prev);
+  renderer.clippingPlanes = [];
+  sky.position.copy(camera.position);
+  water.visible = true;
+}
+
 function applyGfx(level, announce = false) {
   gfx = level;
-  const dpr = Math.min(devicePixelRatio, level === 'alta' ? 2 : level === 'media' ? 1.5 : 1);
+  const ultra = level === 'ultra';
+  const dpr = Math.min(devicePixelRatio, ultra || level === 'alta' ? 2 : level === 'media' ? 1.5 : 1);
   renderer.setPixelRatio(dpr);
   renderer.setSize(innerWidth, innerHeight);
   composer.setPixelRatio(dpr);
   composer.setSize(innerWidth, innerHeight);
   finish.uniforms.uRes.value.set(innerWidth * dpr, innerHeight * dpr);
-  gtao.enabled = level === 'alta';
-  const size = level === 'baja' ? 1024 : 2048;
+  gtao.enabled = ultra || level === 'alta';
+  gtao.updateGtaoMaterial({ samples: ultra ? 16 : 12, radius: ultra ? 0.45 : 0.35 });
+  finish.uniforms.uGrade.value = ultra ? 1 : 0;
+  FX.uDetail.value = ultra ? 1 : 0;
+  waterMat.uniforms.uReflect.value = ultra ? 1 : 0;
+  glassMat.metalness = ultra ? 0.45 : 0;
+  bodyMat.envMapIntensity = 0.7;
+  scene.environment = ultra ? envTexture() : null;
+  reflRT.setSize(Math.round(innerWidth * dpr * 0.5), Math.round(innerHeight * dpr * 0.5));
+  const size = ultra ? 4096 : level === 'baja' ? 1024 : 2048;
   if (sun.shadow.mapSize.x !== size) {
     sun.shadow.mapSize.set(size, size);
     if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
@@ -264,7 +366,7 @@ function watchPerformance(dt) {
   const ms = (perfTime / perfFrames) * 1000;
   perfTime = 0; perfFrames = 0;
   perfSlow = ms > 30 ? perfSlow + 1 : 0;
-  if (perfSlow >= 3) { perfSlow = 0; applyGfx(gfx === 'alta' ? 'media' : 'baja', true); }
+  if (perfSlow >= 3) { perfSlow = 0; applyGfx(gfx === 'ultra' ? 'alta' : gfx === 'alta' ? 'media' : 'baja', true); }
 }
 
 // performance overlay (menu → Rendimiento): fps, frame time, draw calls and triangles
@@ -275,7 +377,7 @@ function renderFrame() {
   renderer.info.reset();
   // shadows: every frame on high quality, every 2nd on medium, every 4th on low
   shadowFrame++;
-  if (shadowFrame % (gfx === 'alta' ? 1 : gfx === 'media' ? 2 : 4) === 0) renderer.shadowMap.needsUpdate = true;
+  if (shadowFrame % (gfx === 'ultra' || gfx === 'alta' ? 1 : gfx === 'media' ? 2 : 4) === 0) renderer.shadowMap.needsUpdate = true;
   sky.position.copy(camera.position);
   renderScene();
   const now = performance.now();
@@ -293,7 +395,8 @@ function renderScene() {
   finish.uniforms.uFocus.value = clamp(p.y * 0.5 + 0.5, 0.25, 0.75);
   const dist = camera.position.distanceTo(controls.target);
   finish.uniforms.uBlur.value = clamp(9 - dist / 10, 2.5, 7) * renderer.getPixelRatio();
+  if (gfx === 'ultra') renderReflection();
   composer.render();
 }
 
-export { renderer, scene, SKY_DAY, SKY_DUSK, SKY_NIGHT, SKY_RAIN, TOP_DAY, TOP_DUSK, TOP_NIGHT, TOP_RAIN, camera, controls, hemi, sun, sky, terrainHeight, riverStrip, waterMat, cloudShapes, updateClouds, GFX_KEY, GFX_LEVELS, gfx, gfxChosen, composer, gtao, bloom, finish, applyGfx, perfTime, perfFrames, perfSlow, watchPerformance, setPerfVisible, perfVisible, perfAcc, perfN, perfLast, shadowFrame, renderFrame, renderScene };
+export { skyUniforms, skyMat, water, WATER_Y, strongGpu, pmrem, envTexture, refreshEnvironment, envStamp, reflRT, renderReflection, renderer, scene, SKY_DAY, SKY_DUSK, SKY_NIGHT, SKY_RAIN, TOP_DAY, TOP_DUSK, TOP_NIGHT, TOP_RAIN, camera, controls, hemi, sun, sky, terrainHeight, riverStrip, waterMat, cloudShapes, updateClouds, GFX_KEY, GFX_LEVELS, gfx, gfxChosen, composer, gtao, bloom, finish, applyGfx, perfTime, perfFrames, perfSlow, watchPerformance, setPerfVisible, perfVisible, perfAcc, perfN, perfLast, shadowFrame, renderFrame, renderScene };

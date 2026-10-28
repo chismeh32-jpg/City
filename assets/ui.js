@@ -9,7 +9,7 @@ import { D, buildCost, isLocked, law, nearRoad, party, radiusOf, refresh, upkeep
 import { sfx } from './audio.js';
 import { LAYERS, currentLayer, restoreLayer, setLayer, showRange } from './layers.js';
 import { bar, closeInspector, inspect, renderInspector, renderStats, takePhoto, togglePhotoMode, toggleSound } from './panels.js';
-import { agents, markFires, trafficLabel, walkers } from './life.js';
+import { agents, fireworks, markFires, trafficLabel, walkers } from './life.js';
 
 /* ---------------------------------------------------------------- news ticker */
 let lastWarn = {};
@@ -568,6 +568,7 @@ $('polChangeParty').onclick = () => openModal('partyModal');
 
 function showElection(r) {
   sfx(r.won ? 'win' : 'lose');
+  if (r.won) fireworks(10);
   const rows = [[S.party || 'centro', r.mine, true], ...r.rivals.map(([k, v]) => [k, v, false])].sort((a, b) => b[1] - a[1]);
   $('elTitle').textContent = r.won ? '🏆 ¡Has ganado las elecciones!' : '❌ Has perdido las elecciones';
   $('elText').textContent = r.won

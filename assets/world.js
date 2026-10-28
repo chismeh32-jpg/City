@@ -1,6 +1,6 @@
 // Urbania — the 3D map: roads, trees, zone overlays and tile buildings batched into chunks.
 import * as THREE from 'three';
-import { Builder, GEO, prep, rng, pick, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor, constructionSite, ruinSite } from './buildings.js';
+import { Builder, FX, GEO, prep, rng, pick, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor, constructionSite, ruinSite } from './buildings.js';
 import { DIRS, HALF, I, N, RIVER_W, W, WATER, ZONES, _c, _e, _m, _q, _s, _v, forestNoise, hash, inside, riverZ } from './config.js';
 import { S } from './state.js';
 import { renderer, scene, terrainHeight } from './scene.js';
@@ -70,6 +70,7 @@ function roadBuilder(x, z) {
     if (k >= 0) {
       const [dx, dz] = DIRS[k], px = dx ? dx * 0.45 : 0.4, pz = dz ? dz * 0.45 : 0.4;
       b.box(px, 0, pz, 0.025, 0.5, 0.025, 0x3b3f46).box(px, 0.5, pz, 0.07, 0.035, 0.07, 0xfff2c4, 1);
+      b.lights.push([px * 0.45, 0, pz * 0.45]); // pool of light on the street under the lamp
     }
   }
   // trees on the avenue median
@@ -109,6 +110,16 @@ for (let k = 0; k < 4200; k++) {
 const TREE_CAP = N * N * TREE_SLOTS + DECOR.length;
 const trunkMesh = new THREE.InstancedMesh(prep(new THREE.CylinderGeometry(0.04, 0.06, 0.32, 5).translate(0, 0.16, 0)), new THREE.MeshStandardMaterial({ color: 0x7a5638, flatShading: true }), TREE_CAP);
 const crownMat = new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.9 });
+// crowns sway in the wind (more when it rains); the top moves, the base stays put
+crownMat.onBeforeCompile = (shader) => {
+  Object.assign(shader.uniforms, { uTime: FX.uTime, uWind: FX.uWind });
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nuniform float uTime; uniform float uWind;')
+    .replace('#include <begin_vertex>', `#include <begin_vertex>
+      vec3 fxBase = instanceMatrix[3].xyz;
+      float fxSway = sin(uTime * 1.7 + fxBase.x * 0.8 + fxBase.z * 0.6) + 0.4 * sin(uTime * 3.9 + fxBase.z * 1.3);
+      transformed.xz += vec2(fxSway, fxSway * 0.6) * uWind * max(transformed.y - 0.25, 0.0) * 0.09;`);
+};
 const roundMesh = new THREE.InstancedMesh(prep(new THREE.IcosahedronGeometry(0.27, 0).translate(0, 0.52, 0)), crownMat, TREE_CAP);
 const coneMesh = new THREE.InstancedMesh(prep(new THREE.ConeGeometry(0.21, 0.72, 6).translate(0, 0.6, 0)), crownMat, TREE_CAP);
 for (const m of [trunkMesh, roundMesh, coneMesh]) { m.castShadow = true; m.receiveShadow = true; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); }
@@ -171,6 +182,7 @@ function flushInstances() {
     for (const m of [trunkMesh, roundMesh, coneMesh]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     treesDirty = false;
   }
+  if (lampPools.dirty) flushPools();
   if (overlayDirty) { overlay.instanceMatrix.needsUpdate = true; if (overlay.instanceColor) overlay.instanceColor.needsUpdate = true; overlayDirty = false; }
 }
 
@@ -180,6 +192,42 @@ cursor.count = 0;
 scene.add(cursor);
 
 const smokeEmitters = { list: [], dirty: true }; // chimney tops, rebuilt when chunks change
+
+/* pools of warm light under street lamps at night (additive quads on the pavement) */
+function glowTexture(draw) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  draw(c.getContext('2d'));
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const POOL_CAP = 900;
+const poolMat = new THREE.MeshBasicMaterial({
+  map: glowTexture((g) => {
+    const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grd.addColorStop(0, 'rgba(255,214,150,1)'); grd.addColorStop(0.35, 'rgba(255,190,120,.55)'); grd.addColorStop(1, 'rgba(255,170,90,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+  }),
+  transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+});
+const pools = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.35, 1.35).rotateX(-Math.PI / 2), poolMat, POOL_CAP);
+pools.position.y = 0.032; // just above the asphalt and its markings
+pools.count = 0;
+pools.frustumCulled = false;
+pools.renderOrder = 2;
+scene.add(pools);
+const lampPools = { dirty: true };
+function flushPools() {
+  let n = 0;
+  for (const ch of chunks) for (const p of ch.lights || []) {
+    if (n >= POOL_CAP) break;
+    pools.setMatrixAt(n++, _m.makeTranslation(p.x, 0, p.z));
+  }
+  pools.count = n;
+  pools.instanceMatrix.needsUpdate = true;
+  lampPools.dirty = false;
+}
 
 /* ---------------------------------------------------------------- tile objects, batched into chunks */
 // Static tiles are merged per CH×CH chunk to keep draw calls low. Buildings that finish in the same
@@ -232,6 +280,8 @@ function buildChunk(c) {
   ch.group = new THREE.Group();
   ch.group.add(bld.build(true), road.build(false));
   ch.smoke = bld.smoke;
+  ch.lights = [...bld.lights, ...road.lights];
+  lampPools.dirty = true;
   scene.add(ch.group);
   smokeEmitters.dirty = true;
   renderer.shadowMap.needsUpdate = true;
@@ -313,4 +363,4 @@ function rebuildAll() {
   for (let i = 0; i < N * N; i++) refreshTile(i);
 }
 
-export { isRoad, busNetwork, setBusNetwork, busStopSide, isBusStop, roadBuilder, PARKED, TREE_SLOTS, DECOR, TREE_CAP, trunkMesh, crownMat, roundMesh, coneMesh, ZERO, slotOn, slotCone, slotMatrix, slotColor, GREENS, AUTUMN, BLOSSOM, treeSlot, setTrees, treesDirty, overlay, setOverlay, overlayDirty, flushInstances, cursor, smokeEmitters, CH, NC, chunks, dirtyChunks, animating, growBatches, pendingGrow, chunkOf, facing, tileBuilder, tileMatrix, disposeGroup, buildChunk, rotors, refreshTile, refreshAround, finishBatch, startGrowBatches, updateGrowth, rebuildDirtyChunks, rebuildAll };
+export { poolMat, pools, lampPools, flushPools, glowTexture, isRoad, busNetwork, setBusNetwork, busStopSide, isBusStop, roadBuilder, PARKED, TREE_SLOTS, DECOR, TREE_CAP, trunkMesh, crownMat, roundMesh, coneMesh, ZERO, slotOn, slotCone, slotMatrix, slotColor, GREENS, AUTUMN, BLOSSOM, treeSlot, setTrees, treesDirty, overlay, setOverlay, overlayDirty, flushInstances, cursor, smokeEmitters, CH, NC, chunks, dirtyChunks, animating, growBatches, pendingGrow, chunkOf, facing, tileBuilder, tileMatrix, disposeGroup, buildChunk, rotors, refreshTile, refreshAround, finishBatch, startGrowBatches, updateGrowth, rebuildDirtyChunks, rebuildAll };

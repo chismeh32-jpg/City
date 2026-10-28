@@ -8,7 +8,7 @@ import { D, LAND_FOR_LEVEL, isLocked, radiusOf, upkeepOf } from './sim.js';
 import { isMuted, setMuted, sfx } from './audio.js';
 import { layerValue } from './layers.js';
 import { TOOL_BY_ID, apply, closeModals, describe, lastSpeed, openModal, renderToolbar, selectTool, setSpeed, tool } from './ui.js';
-import { roadLoad, trafficLabel } from './life.js';
+import { fireworks, roadLoad, trafficLabel } from './life.js';
 
 /* building inspector: click any tile in look mode */
 const SURNAMES = ['García', 'Martínez', 'López', 'Sánchez', 'Pérez', 'Gómez', 'Ruiz', 'Díaz', 'Moreno', 'Álvarez', 'Romero', 'Navarro', 'Torres', 'Domínguez', 'Vázquez', 'Ramos'];
@@ -114,6 +114,7 @@ function showRankUp(r, reward, from = r - 1) {
     + (next ? `<p class="note">Siguiente meta: ${next[1].toLowerCase()} con ${fmt(next[0])} habitantes.</p>` : '<p class="note">Has llegado a lo más alto. ¡Enhorabuena, alcaldía!</p>');
   news(`${S.name} sube de categoría: ahora es ${name.toLowerCase()}.`, 'CIUDAD');
   sfx('rank');
+  fireworks(12);
   if (S.speed) rankResume = S.speed;
   setSpeed(0);
   openModal('rankModal');

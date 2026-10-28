@@ -21,29 +21,48 @@ function vehicleType(cap, build) {
   for (const m of [mesh, glow]) { m.count = 0; m.castShadow = m === mesh; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; scene.add(m); }
   return { mesh, glow, list: [] };
 }
-const WHITE = 0xffffff, GLASS = 0x2e3a48, TYRE = 0x222222, LAMP = 0xfff2c4;
+const WHITE = 0xffffff, GLASS = 0x2e3a48, TYRE = 0x222222, LAMP = 0xfff2c4, TAIL = 0xff2a1a;
 const VEH = {
   car: vehicleType(220, (b) => {
     b.box(0, 0.018, 0, 0.075, 0.042, 0.14, WHITE).box(0, 0.06, -0.012, 0.066, 0.036, 0.075, GLASS);
     for (const [x, z] of [[-0.036, 0.045], [0.036, 0.045], [-0.036, -0.045], [0.036, -0.045]]) b.box(x, 0, z, 0.012, 0.026, 0.026, TYRE);
     b.box(-0.025, 0.03, 0.071, 0.016, 0.012, 0.004, LAMP, 1).box(0.025, 0.03, 0.071, 0.016, 0.012, 0.004, LAMP, 1);
+    b.box(-0.027, 0.03, -0.0715, 0.014, 0.01, 0.004, TAIL, 1).box(0.027, 0.03, -0.0715, 0.014, 0.01, 0.004, TAIL, 1);
   }),
   van: vehicleType(50, (b) => {
     b.box(0, 0.02, -0.03, 0.082, 0.1, 0.15, WHITE).box(0, 0.02, 0.07, 0.08, 0.07, 0.06, WHITE).box(0, 0.06, 0.1, 0.07, 0.03, 0.004, GLASS);
     b.box(-0.026, 0.035, 0.101, 0.016, 0.012, 0.004, LAMP, 1).box(0.026, 0.035, 0.101, 0.016, 0.012, 0.004, LAMP, 1);
+    b.box(-0.03, 0.04, -0.106, 0.014, 0.014, 0.004, TAIL, 1).box(0.03, 0.04, -0.106, 0.014, 0.014, 0.004, TAIL, 1);
   }),
   truck: vehicleType(30, (b) => {
     b.box(0, 0.02, -0.035, 0.09, 0.11, 0.2, WHITE).box(0, 0.02, 0.1, 0.088, 0.09, 0.07, WHITE).box(0, 0.075, 0.136, 0.078, 0.03, 0.004, GLASS);
     b.box(0, 0.13, -0.035, 0.03, 0.012, 0.19, 0xd8d2c4);
     b.box(-0.03, 0.04, 0.137, 0.016, 0.012, 0.004, LAMP, 1).box(0.03, 0.04, 0.137, 0.016, 0.012, 0.004, LAMP, 1);
+    b.box(-0.035, 0.04, -0.136, 0.014, 0.014, 0.004, TAIL, 1).box(0.035, 0.04, -0.136, 0.014, 0.014, 0.004, TAIL, 1);
   }),
   bus: vehicleType(30, (b) => {
     b.box(0, 0.02, 0, 0.088, 0.105, 0.34, WHITE).box(0, 0.07, 0, 0.09, 0.035, 0.32, GLASS).box(0, 0.07, 0.17, 0.08, 0.035, 0.004, GLASS);
     b.box(0, 0.125, 0, 0.07, 0.01, 0.2, 0xe8e4dc);
     b.box(-0.03, 0.04, 0.171, 0.018, 0.012, 0.004, LAMP, 1).box(0.03, 0.04, 0.171, 0.018, 0.012, 0.004, LAMP, 1);
+    b.box(-0.032, 0.04, -0.171, 0.014, 0.016, 0.004, TAIL, 1).box(0.032, 0.04, -0.171, 0.014, 0.016, 0.004, TAIL, 1);
   }),
 };
 const VEH_SCALE = 1.8; // vehicles are modelled small; this brings them to the scale of the houses
+// headlight beams on the road at night: one soft cone per vehicle (local +z is the front)
+const FRONT = { car: 0.072, van: 0.102, truck: 0.138, bus: 0.172 };
+const beamMat = new THREE.MeshBasicMaterial({
+  map: (() => {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+    const g = c.getContext('2d'), grd = g.createLinearGradient(0, 0, 0, 128);
+    grd.addColorStop(0, 'rgba(255,240,205,.9)'); grd.addColorStop(1, 'rgba(255,240,205,0)');
+    g.fillStyle = grd; g.beginPath(); g.moveTo(24, 0); g.lineTo(40, 0); g.lineTo(64, 128); g.lineTo(0, 128); g.closePath(); g.fill();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })(),
+  transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+});
+const beams = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.16, 0.3).rotateX(-Math.PI / 2).translate(0, 0.0045, 0.15), beamMat, 340);
+beams.count = 0; beams.frustumCulled = false; beams.renderOrder = 2; scene.add(beams);
+const _beam = new THREE.Matrix4(), _beamOff = new THREE.Matrix4();
 const sirens = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.016, 0.02), new THREE.MeshBasicMaterial(), 40);
 sirens.count = 0; sirens.frustumCulled = false; scene.add(sirens);
 const CAR_COLOURS = [0xd8342a, 0x2f5fb5, 0xf2efe6, 0x3b3f46, 0xe0a83a, 0x4f9a5a, 0x8a5fbf, 0x9aa0a6, 0xf2efe6, 0x2b2b2b];
@@ -221,7 +240,7 @@ function updateTraffic(dt) {
   for (const i of roadTiles()) roadLoad[i] += (load[i] - roadLoad[i]) * Math.min(1, dt * 0.8);
 
   for (const T of Object.values(VEH)) T.list.length = 0;
-  let sirenN = 0;
+  let sirenN = 0, beamN = 0;
   for (let n = agents.length - 1; n >= 0; n--) {
     const a = agents[n], R = ROLES[a.role];
     if (S.tiles[a.from].t !== 'road' || S.tiles[a.to].t !== 'road') { agents.splice(n, 1); continue; }
@@ -258,6 +277,7 @@ function updateTraffic(dt) {
     const T = VEH[R.type], idx = T.list.length;
     T.list.push(a);
     T.mesh.setMatrixAt(idx, _m); T.glow.setMatrixAt(idx, _m); T.mesh.setColorAt(idx, a.colour);
+    if (beamMat.opacity > 0.01 && beamN < 340) beams.setMatrixAt(beamN++, _beam.copy(_m).multiply(_beamOff.makeTranslation(0, 0, FRONT[R.type])));
     if (R.siren && sirenN < 40) {
       const m2 = _m.clone().multiply(new THREE.Matrix4().makeTranslation(0, R.siren, 0));
       sirens.setMatrixAt(sirenN, m2);
@@ -272,6 +292,8 @@ function updateTraffic(dt) {
     if (T.mesh.instanceColor) T.mesh.instanceColor.needsUpdate = true;
   }
   sirens.count = sirenN;
+  beams.count = beamN;
+  beams.instanceMatrix.needsUpdate = true;
   sirens.instanceMatrix.needsUpdate = true;
   if (sirens.instanceColor) sirens.instanceColor.needsUpdate = true;
 }
@@ -516,6 +538,54 @@ const flameTex = (() => {
   return new THREE.CanvasTexture(c);
 })();
 const flames = new Particles(70, flameTex, { additive: true });
+
+/* fireworks where the camera is looking, to celebrate a promotion or an election win */
+const sparkTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const g = c.getContext('2d'), grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grd.addColorStop(0, 'rgba(255,255,255,1)'); grd.addColorStop(0.3, 'rgba(255,255,255,.7)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
+})();
+const sparks = [0xff5a4a, 0xffd25a, 0x6fb6ff, 0x7dff9a, 0xff8fe0].map((c) => new Particles(600, sparkTex, { color: c, additive: true }));
+const rocketTrail = new Particles(160, sparkTex, { color: 0xffe2a8, additive: true });
+const rockets = [], showAt = new THREE.Vector3();
+let showLeft = 0, showClock = 0;
+function fireworks(seconds = 10) {
+  showAt.copy(controls.target);
+  showLeft = seconds;
+}
+function updateFireworks(dt) {
+  if (showLeft > 0) {
+    showLeft -= dt; showClock -= dt;
+    if (showClock <= 0) {
+      showClock = 0.3 + Math.random() * 0.5;
+      rockets.push({ x: showAt.x + (Math.random() - 0.5) * 8, y: 0.6, z: showAt.z + (Math.random() - 0.5) * 8, vy: 5.2 + Math.random() * 1.8, t: 0.8 + Math.random() * 0.35 });
+    }
+  }
+  for (let k = rockets.length - 1; k >= 0; k--) {
+    const r = rockets[k];
+    r.t -= dt; r.y += r.vy * dt; r.vy -= 4 * dt;
+    rocketTrail.emit(r.x, r.y, r.z, (Math.random() - 0.5) * 0.2, -0.4, (Math.random() - 0.5) * 0.2);
+    if (r.t > 0) continue;
+    const P = pick(Math.random, sparks), speed = 1.8 + Math.random() * 0.9;
+    for (let i = 0; i < 110; i++) {
+      const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+      P.emit(r.x, r.y, r.z, Math.cos(a) * s * speed, u * speed, Math.sin(a) * s * speed);
+    }
+    rockets.splice(k, 1);
+    sfx('boom');
+  }
+  for (const P of sparks) {
+    for (let i = 0; i < P.max; i++) {
+      if (P.life[i] <= 0) continue;
+      P.vel[i * 3] *= 1 - dt * 1.1; P.vel[i * 3 + 2] *= 1 - dt * 1.1;
+      P.vel[i * 3 + 1] = P.vel[i * 3 + 1] * (1 - dt * 1.1) - 1.6 * dt;
+    }
+    P.update(dt, 0.5, (l) => [0.12 + 0.12 * l, Math.min(1, l * 1.8) * (0.65 + 0.35 * Math.random())]);
+  }
+  rocketTrail.update(dt, 2.4, (l) => [0.07 * l + 0.02, l * 0.9]);
+}
 const blackSmoke = new Particles(60, smokeTex, { color: 0x3b3a38 });
 let fireDirty = true, fireSpots = [], fireClock = 0;
 function markFires() { fireDirty = true; }
@@ -565,4 +635,4 @@ function updateRain(dt) {
   p.needsUpdate = true;
 }
 
-export { vehicleType, WHITE, GLASS, TYRE, LAMP, VEH, VEH_SCALE, sirens, CAR_COLOURS, SIREN_RED, SIREN_BLUE, SIREN_OFF, ROLES, roadNeighbours, isJunction, agents, roadCache, roadCacheKey, trafficClock, roadTiles, nearestRoad, spawn, roadLoad, tripCache, tripCacheKey, tripEnds, commuteTrip, routeBetween, wanted, stationOf, congestion, trafficLabel, updateTraffic, boats, updateBoats, BIRDS, birds, flocks, updateBirds, PEOPLE, SKIN, CLOTHES, peopleMesh, headMesh, walkers, updatePeople, smokeTex, Particles, chimneySmoke, emitClock, updateSmoke, FIRE_HOURS, FIRE_HEIGHT, roadPath, fireCovered, fireTick, startFire, engineArrived, flameTex, flames, blackSmoke, fireDirty, fireSpots, fireClock, markFires, updateFires, RAIN, rain, updateRain };
+export { fireworks, updateFireworks, sparks, rocketTrail, beamMat, beams, vehicleType, WHITE, GLASS, TYRE, LAMP, VEH, VEH_SCALE, sirens, CAR_COLOURS, SIREN_RED, SIREN_BLUE, SIREN_OFF, ROLES, roadNeighbours, isJunction, agents, roadCache, roadCacheKey, trafficClock, roadTiles, nearestRoad, spawn, roadLoad, tripCache, tripCacheKey, tripEnds, commuteTrip, routeBetween, wanted, stationOf, congestion, trafficLabel, updateTraffic, boats, updateBoats, BIRDS, birds, flocks, updateBirds, PEOPLE, SKIN, CLOTHES, peopleMesh, headMesh, walkers, updatePeople, smokeTex, Particles, chimneySmoke, emitClock, updateSmoke, FIRE_HOURS, FIRE_HEIGHT, roadPath, fireCovered, fireTick, startFire, engineArrived, flameTex, flames, blackSmoke, fireDirty, fireSpots, fireClock, markFires, updateFires, RAIN, rain, updateRain };

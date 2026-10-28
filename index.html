@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Urbania: construye tu ciudad en 3D</title>
   <meta name="description" content="Un constructor de ciudades en 3D con calles, zonas, servicios, presupuesto y aprobación vecinal. Gratis y en el navegador.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="preload" href="assets/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="assets/fonts.css">
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body data-page="home">
@@ -19,7 +19,7 @@
           <p class="lead">Traza calles, marca barrios y mira cómo crecen solos. Pon hospitales, escuelas y bomberos, cuadra el presupuesto y gánate a los vecinos. Gratis y en el navegador.</p>
           <div class="hero-cta">
             <a class="btn btn-primary" href="jugar.html">▶ Jugar gratis</a>
-            <a class="btn" href="como-jugar.html">Cómo se juega</a>
+            <a class="btn" href="https://github.com/chismeh32-jpg/City/releases/latest/download/Urbania-Instalador.exe"><svg class="i" aria-hidden="true"><use href="#i-monitor"/></svg> Descargar para Windows</a>
           </div>
           <ul class="badges">
             <li>Sin descargas</li><li>Sin registro</li><li>Se guarda solo</li><li>9 estilos de ciudad</li>
@@ -97,6 +97,28 @@
       </div>
     </section>
 
+    <section id="pc">
+      <div class="wrap split">
+        <div>
+          <span class="eyebrow"><svg class="i" aria-hidden="true"><use href="#i-monitor"/></svg> <b>Nuevo</b> · Versión para PC</span>
+          <h2>Juega en tu ordenador, en Ultra</h2>
+          <p class="muted">La versión para Windows se abre a pantalla completa, funciona sin internet y arranca con los gráficos al máximo para tu tarjeta gráfica.</p>
+          <ul class="checks">
+            <li>El río refleja la ciudad como un espejo y las ventanas reflejan el cielo</li>
+            <li>De noche, cada ventana se enciende a su hora, las farolas iluminan la calle y los coches llevan faros</li>
+            <li>Calles mojadas con charcos cuando llueve y árboles que se mecen con el viento</li>
+            <li>Sombras en 4K, cielo con estrellas y fuegos artificiales cuando tu ciudad sube de rango</li>
+          </ul>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="https://github.com/chismeh32-jpg/City/releases/latest/download/Urbania-Instalador.exe"><svg class="i" aria-hidden="true"><use href="#i-monitor"/></svg> Descargar instalador</a>
+            <a class="btn" href="https://github.com/chismeh32-jpg/City/releases/latest/download/Urbania-Portable.exe">Versión portátil</a>
+          </div>
+          <p class="muted" style="font-size:.85rem">Windows 10 u 11 de 64 bits. Como la aplicación aún no está firmada, Windows puede mostrar «Windows protegió su PC»: pulsa <b>Más información → Ejecutar de todas formas</b>. En el navegador también puedes elegir «Ultra» en el menú del juego.</p>
+        </div>
+        <div class="shot"><img src="assets/img/ultra-night.jpg" width="1440" height="900" alt="La ciudad de noche en calidad Ultra, con ventanas encendidas, farolas y faros de coches" loading="lazy"></div>
+      </div>
+    </section>
+
     <section>
       <div class="wrap stats">
         <div class="stat"><b>6</b><span>rangos, de aldea a metrópolis</span></div>
@@ -119,6 +141,7 @@
         <details><summary>¿Cómo funcionan las elecciones?</summary><p>Cada 10 días votan tus vecinos. Tu resultado depende de la aprobación y de si tu partido encaja con lo que vota la ciudad: las ciudades con mucha industria y oficinas tiran a la derecha, y las que tienen buenos servicios, a la izquierda. Si sacas menos del 50 %, tendrás que repetir campaña.</p></details>
         <details><summary>¿Por qué no crecen mis casas?</summary><p>Necesitan una calle a menos de dos casillas, luz y agua de sobra, y demanda. Si la red eléctrica o el agua están al límite, aparece un aviso rojo bajo la barra superior: púlsalo y te lleva a construir lo que falta. Para subir de nivel también hace falta un buen <b>valor del suelo</b>: pon parques, árboles y servicios cerca y aleja las fábricas. Haz clic en una casa con la herramienta Mirar y verás exactamente qué le falta.</p></details>
         <details><summary>¿Por qué hay edificios con candado?</summary><p>Se desbloquean al subir de rango. Con 100 habitantes tu aldea pasa a pueblo y puedes construir el ayuntamiento, la plaza mayor, la estación de autobuses y el parque solar; con 300, villa (oficinas, museo, aerogeneradores y avenidas); con 700, ciudad (zoológico); y con 1.500, gran ciudad (estadio). Cada ascenso trae además un premio en dinero.</p></details>
+        <details><summary>¿Hay versión para ordenador?</summary><p>Sí, para Windows 10 y 11: <a href="https://github.com/chismeh32-jpg/City/releases/latest/download/Urbania-Instalador.exe"><b>descarga el instalador</b></a>. Funciona sin internet, a pantalla completa (F11) y con los gráficos en Ultra. Tus partidas del navegador no pasan solas a la aplicación: guárdalas en un archivo desde el menú del juego y cárgalas allí.</p></details>
         <details><summary>¿Se puede jugar sin sonido?</summary><p>Sí. Pulsa <b>M</b> o desmarca «Sonido» en el menú del juego. Todo el sonido se genera en el navegador, así que no descarga nada.</p></details>
       </div>
     </section>
