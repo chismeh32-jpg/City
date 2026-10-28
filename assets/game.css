@@ -185,3 +185,33 @@ button.stat:hover { background: var(--paper-2); }
 .vote b { text-align: right; }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .serif { font-family: Georgia, "Times New Roman", serif; }
+
+/* problem alerts */
+.alerts { position: fixed; left: 10px; top: 120px; z-index: 4; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.alert { border: var(--line); border-radius: 999px; background: #fbe3dc; color: var(--ink); font: inherit; font-size: .8rem; font-weight: 800; padding: 5px 12px; cursor: pointer; box-shadow: var(--shadow); animation: pulse 1.6s ease-in-out infinite; }
+.alert b { color: var(--accent); margin-left: 4px; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(228, 85, 59, .25), var(--shadow); } }
+@media (prefers-reduced-motion: reduce) { .alert { animation: none; } }
+
+/* compact top bar: labels only on wide screens, essentials only on phones */
+@media (max-width: 1700px) {
+  .stat small { display: none; }
+  .stat { padding: 4px 8px; gap: 5px; }
+  .stat b { font-size: .95rem; }
+  .brand { padding: 4px 10px; }
+}
+@media (max-width: 1400px) {
+  .stat[title^="Empleos"] { display: none; }
+}
+@media (max-width: 1180px) {
+  .topbar .spacer { display: none; }
+  #openPolitics, #openBudget, .stat[title^="Empleos"] { display: none; }
+}
+@media (max-width: 560px) {
+  .topbar { gap: 4px; top: 6px; left: 6px; right: 6px; }
+  #resPill { display: none; } /* power/water/jobs: the alerts and the menu cover them on phones */
+  .speeds button { width: 28px; height: 26px; }
+  .stat .ic { font-size: .95rem; }
+  .alerts { left: 6px; right: 6px; }
+  .alert { font-size: .72rem; }
+}

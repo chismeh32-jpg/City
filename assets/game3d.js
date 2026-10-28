@@ -7,7 +7,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { Builder, GEO, prep, glowMat, rng, pick, STYLES, setStyle, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor } from './buildings.js';
+import { Builder, GEO, prep, glowMat, rng, pick, STYLES, setStyle, resBuilding, comBuilding, offBuilding, indBuilding, serviceBuilding, windRotor, constructionSite, ruinSite } from './buildings.js';
 
 /* ---------------------------------------------------------------- config */
 const N = 44;                       // grid size in tiles
@@ -136,15 +136,15 @@ function newState() {
     tiles: Array.from({ length: N * N }, (_, i) => ({ t: 0, z: null, lv: 0, s: null, v: 0, tree: initialTree(i) })),
   };
 }
+// returns a full state from saved data, or null if it is not a valid save
+function fromSave(s) {
+  if (!s || !Array.isArray(s.tiles) || s.tiles.length !== N * N) return null;
+  const fresh = newState();
+  // merge nested settings so saves from older versions pick up new budget lines
+  return Object.assign(fresh, s, { funding: { ...fresh.funding, ...s.funding }, taxes: { ...fresh.taxes, ...s.taxes }, laws: { ...s.laws } });
+}
 function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-    if (s && Array.isArray(s.tiles) && s.tiles.length === N * N) {
-      const fresh = newState();
-      // merge nested settings so saves from older versions pick up new budget lines
-      return Object.assign(fresh, s, { funding: { ...fresh.funding, ...s.funding }, taxes: { ...fresh.taxes, ...s.taxes }, laws: { ...s.laws } });
-    }
-  } catch { /* corrupt or unavailable storage: start fresh */ }
+  try { return fromSave(JSON.parse(localStorage.getItem(SAVE_KEY))) || newState(); } catch { /* corrupt or unavailable storage */ }
   return newState();
 }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch { /* storage unavailable */ } }
@@ -574,9 +574,11 @@ function facing(x, z) {
 function tileBuilder(i) {
   const x = i % N, z = (i / N) | 0, T = S.tiles[i];
   if (T.t === 'road') return roadBuilder(x, z);
+  if (T.t === 'zone' && T.ruin) { const b = new Builder(); ruinSite(b, rng(i * 97 + T.v)); return b; }
   if (T.t !== 'svc' && !(T.t === 'zone' && T.lv > 0)) return null;
   const b = new Builder(), r = rng(i * 97 + T.v * 13 + T.lv);
   if (T.t === 'svc') serviceBuilding(b, T.s, r);
+  else if (T.build > 0) constructionSite(b, T.z, T.lv, r, 1 - T.build / (T.bt || 1));
   else ({ res: resBuilding, com: comBuilding, off: offBuilding, ind: indBuilding })[T.z](b, T.lv, r);
   return b;
 }
@@ -633,7 +635,7 @@ function refreshTile(i, animate = false) {
   }
   dirtyChunks.add(chunkOf(i));
   setTrees(i, T.tree && !T.t);
-  setOverlay(i, T.t === 'zone' && T.lv === 0 ? ZONES[T.z].color : null);
+  setOverlay(i, T.t === 'zone' && T.lv === 0 && !T.ruin ? ZONES[T.z].color : null);
 }
 function refreshAround(i) {
   const x = i % N, z = (i / N) | 0;
@@ -691,7 +693,7 @@ let D = null; // derived stats, refreshed every game hour and after edits
 function compute() {
   const d = {
     pop: 0, jobs: { com: 0, off: 0, ind: 0 }, jobsTotal: 0, powerUse: 0, powerCap: 0, waterUse: 0, waterCap: 0,
-    roads: 0, svc: {}, svcList: [], zoneTiles: { res: 0, com: 0, off: 0, ind: 0 }, buildings: 0, cov: {}, smoke: 0,
+    roads: 0, svc: {}, svcList: [], zoneTiles: { res: 0, com: 0, off: 0, ind: 0 }, buildings: 0, building: 0, emptyLots: 0, cov: {}, smoke: 0,
   };
   const homes = [], polluters = [];
   const indRange = law('industria') ? 2 : 0;
@@ -709,12 +711,13 @@ function compute() {
       if (def.smoke) polluters.push([x, z, def.smoke[0], def.smoke[1]]);
     } else if (T.t === 'zone') {
       d.zoneTiles[T.z]++;
-      if (!T.lv) return;
+      if (!T.lv) { d.emptyLots++; return; }
       d.buildings++;
-      let v = ZONES[T.z].cap[T.lv];
+      if (T.build > 0) d.building++;
+      let v = ZONES[T.z].cap[T.build > 0 ? T.prev || 0 : T.lv];
       if (T.z === 'ind' && law('industria')) v = Math.round(v * 1.3);
       if (T.z === 'com' && law('horarios')) v = Math.round(v * 1.25);
-      if (T.z === 'res') { d.pop += v; homes.push([x, z, v]); }
+      if (T.z === 'res') { d.pop += v; if (v) homes.push([x, z, v]); }
       else { d.jobs[T.z] += v; d.jobsTotal += v; }
       d.powerUse += T.lv * ({ res: 2, com: 3, off: 4, ind: 5 })[T.z];
       d.waterUse += T.lv * ({ res: 3, com: 2, off: 2, ind: 4 })[T.z];
@@ -809,6 +812,8 @@ function approvalRows(d) {
     }, 0);
     if (fit) rows.push([party().icon, fit > 0 ? 'Cumples tu programa electoral' : 'Tus votantes no entienden tus leyes', fit]);
   }
+  if (S.tiles.some((T) => T.fire > 0)) rows.push(['🔥', 'Hay un incendio en la ciudad', -3]);
+  else if (S.burnDay && S.day - S.burnDay < 2) rows.push(['🔥', 'Un edificio ardió hace poco', -2]);
   if (S.money < 0) rows.push(['📉', 'La ciudad está en números rojos', -8]);
   const sum = rows.reduce((a, r) => a + r[2], 0), rounded = rows.reduce((a, r) => a + Math.round(r[2]), 0);
   if (Math.round(sum) !== rounded) rows.push(['≈', 'Otros y redondeo', Math.round(sum) - rounded]);
@@ -822,8 +827,20 @@ function voteShare(d) {
   return clamp(Math.round(S.approval * 0.8 + (affinity - 0.5) * 30 + 8), 5, 95);
 }
 
+// game hours a building of each zone/level spends under construction
+const BUILD_HOURS = { res: [0, 4, 6, 10], com: [0, 5, 7, 10], off: [0, 6, 10, 16], ind: [0, 5, 8, 12] };
+const POWER_PER_LV = { res: 2, com: 3, off: 4, ind: 5 }, WATER_PER_LV = { res: 3, com: 2, off: 2, ind: 4 };
+function startBuilding(i, T, lv) {
+  T.prev = T.lv; T.lv = lv; T.v = Math.floor(Math.random() * 1000); T.tree = false;
+  T.bt = T.build = BUILD_HOURS[T.z][lv];
+  refreshTile(i);
+}
 function growth(d) {
   if (!d.powerCap || !d.waterCap) return;
+  // new buildings only start if the grid can supply them, so growth never causes blackouts
+  let power = d.powerCap - d.powerUse, water = d.waterCap - d.waterUse;
+  const fits = (z) => power >= POWER_PER_LV[z] && water >= WATER_PER_LV[z];
+  const take = (z) => { power -= POWER_PER_LV[z]; water -= WATER_PER_LV[z]; };
   const order = [...S.tiles.keys()].sort(() => Math.random() - 0.5);
   const demand = { ...d.demand }, spawned = { res: 0, com: 0, off: 0, ind: 0 };
   const mood = clamp(S.approval / 70, 0.3, 1.3);
@@ -831,22 +848,20 @@ function growth(d) {
     const T = S.tiles[i];
     if (T.t !== 'zone' || demand[T.z] <= 0 || spawned[T.z] >= 10) continue;
     const x = i % N, z = (i / N) | 0;
-    if (!nearRoad(x, z)) continue;
-    const utilOk = d.powerOk && d.waterOk;
+    if (T.ruin) { if (S.day >= T.ruin) { T.ruin = 0; refreshTile(i); } continue; }
+    if (!nearRoad(x, z) || T.build > 0) continue;
+    if (!fits(T.z)) continue;
     if (T.lv === 0) {
-      if (!utilOk) continue;
       if (Math.random() < 0.3 * clamp(demand[T.z] / 30, 0.15, 1) * growthFactor(T.z) * mood) {
-        T.lv = 1; T.v = Math.floor(Math.random() * 1000); T.tree = false;
+        startBuilding(i, T, 1); take(T.z);
         demand[T.z] -= ZONES[T.z].cap[1]; spawned[T.z]++;
-        refreshTile(i, true);
       }
-    } else if (T.lv < 3 && utilOk && S.approval >= (T.lv === 2 ? 70 : 55)) {
+    } else if (T.lv < 3 && S.approval >= (T.lv === 2 ? 70 : 55)) {
       if (T.z === 'off' && d.pop < 300) continue;
       const boost = T.z === 'res' && T.lv === 2 && law('educacion') ? 1.5 : 1;
       if (Math.random() < 0.02 * growthFactor(T.z) * boost) {
-        T.lv++; T.v = Math.floor(Math.random() * 1000);
+        startBuilding(i, T, T.lv + 1); take(T.z);
         demand[T.z] -= ZONES[T.z].cap[T.lv] - ZONES[T.z].cap[T.lv - 1]; spawned[T.z]++;
-        refreshTile(i, true);
       }
     }
   }
@@ -856,8 +871,18 @@ function growth(d) {
   }
 }
 
+function advanceConstruction() {
+  S.tiles.forEach((T, i) => {
+    if (!(T.build > 0)) return;
+    T.build--;
+    if (T.build <= 0) { T.build = 0; T.prev = 0; refreshTile(i, true); }
+    else if (T.build % 2 === 0) refreshTile(i);
+  });
+}
 function hourTick() {
+  advanceConstruction();
   D = compute();
+  fireTick(D);
   growth(D);
   D = compute();
   S.money += D.fin.net / 24;
@@ -972,6 +997,10 @@ function renderToolbar() {
     b.onclick = () => selectTool(tool.cat === c.id && c.id !== 'look' ? 'look' : c.tools[0].id);
     bar.append(b);
   });
+  const ub = el('button', 'tb', '<span class="ic">↶</span>Deshacer');
+  ub.title = 'Deshacer lo último que has construido hoy (Ctrl+Z)';
+  ub.onclick = undo;
+  bar.append(ub);
   const sub = $('subtools'), cat = CATEGORIES.find((c) => c.id === tool.cat);
   sub.innerHTML = '';
   sub.classList.toggle('open', cat.id !== 'look');
@@ -1065,23 +1094,40 @@ function apply(list) {
   const cost = evals.reduce((a, [, e]) => a + e.cost, 0);
   if (!evals.length) return;
   if (cost > S.money) { news(`Fondos insuficientes: necesitas ${money(cost)}.`, 'AVISO'); return; }
+  undoStack.push({ money: S.money, day: S.day, tiles: evals.map(([i]) => [i, { ...S.tiles[i] }]) });
+  if (undoStack.length > 30) undoStack.shift();
   S.money -= cost;
-  const touched = new Set();
+  const touched = new Set(), clear = { lv: 0, prev: 0, build: 0, fire: 0, saved: false, ruin: 0 };
   for (const [i] of evals) {
     const T = S.tiles[i];
-    if (tool.id === 'road') Object.assign(T, { t: 'road', z: null, lv: 0, s: null, tree: false });
+    if (tool.id === 'road') Object.assign(T, clear, { t: 'road', z: null, s: null, tree: false });
     else if (tool.id === 'trees') T.tree = true;
-    else if (tool.id === 'bulldoze') Object.assign(T, { t: 0, z: null, lv: 0, s: null, tree: false });
-    else if (tool.zone) Object.assign(T, { t: 'zone', z: tool.zone, lv: 0, s: null, tree: false });
-    else Object.assign(T, { t: 'svc', s: tool.svc, z: null, lv: 0, tree: false, v: Math.floor(Math.random() * 1000) });
+    else if (tool.id === 'bulldoze') Object.assign(T, clear, { t: 0, z: null, s: null, tree: false });
+    else if (tool.zone) Object.assign(T, clear, { t: 'zone', z: tool.zone, s: null, tree: false });
+    else Object.assign(T, clear, { t: 'svc', s: tool.svc, z: null, tree: false, v: Math.floor(Math.random() * 1000) });
     touched.add(i);
   }
+  fireDirty = true;
   for (const i of touched) refreshAround(i);
   for (const i of touched) if (S.tiles[i].t === 'svc') refreshTile(i, true);
   D = compute();
   checkTutorial(D);
   updateHud();
   save();
+}
+
+// undo the last build action (same game day only, so growth since then is not rolled back)
+const undoStack = [];
+function undo() {
+  const last = undoStack.pop();
+  if (!last) return news('No hay nada que deshacer.', 'AVISO');
+  if (last.day !== S.day) { undoStack.length = 0; return news('Solo se puede deshacer lo construido hoy.', 'AVISO'); }
+  S.money = last.money;
+  for (const [i, T] of last.tiles) S.tiles[i] = T;
+  for (const [i] of last.tiles) refreshAround(i);
+  fireDirty = true;
+  D = compute(); updateHud(); save();
+  news('Deshecho.', 'AJUSTES');
 }
 
 let drag = null, hoverTile = null;
@@ -1145,10 +1191,16 @@ function describe(i) {
   if (T.t === 'zone') {
     const Z = ZONES[T.z];
     if (!T.lv) {
-      const why = !nearRoad(x, z) ? 'Necesita una calle cerca' : !D?.powerCap ? 'Necesita luz' : !D?.waterCap ? 'Necesita agua' : D?.demand[T.z] <= 0 ? 'No hay demanda ahora mismo' : 'Esperando a que alguien construya';
+      const why = !nearRoad(x, z) ? 'Necesita una calle cerca' : !D?.powerCap ? 'Necesita luz' : !D?.waterCap ? 'Necesita agua'
+        : D.powerCap - D.powerUse < 5 ? '<span class="bad">Sin luz de sobra: construye otra central</span>'
+        : D.waterCap - D.waterUse < 4 ? '<span class="bad">Sin agua de sobra: construye otra torre</span>'
+        : D?.demand[T.z] <= 0 ? 'No hay demanda ahora mismo' : 'Esperando a que alguien construya';
       return `<b>${Z.icon} Zona de ${Z.label.toLowerCase()}</b>${why}`;
     }
     const names = { res: ['', 'Casa', 'Casa grande', 'Edificio de viviendas'], com: ['', 'Tienda', 'Comercio', 'Galerías'], off: ['', 'Oficinas', 'Edificio de oficinas', 'Torre de oficinas'], ind: ['', 'Taller', 'Fábrica', 'Complejo industrial'] };
+    if (T.ruin) return '<b>🏚️ Ruinas</b>Se reconstruirá en unos días';
+    if (T.fire > 0) return `<b>🔥 ¡En llamas!</b>${T.saved ? 'Los bomberos lo están apagando' : 'Sin bomberos cerca: puede quemarse entero'}`;
+    if (T.build > 0) return `<b>🏗️ En obras: ${names[T.z][T.lv].toLowerCase()}</b>Faltan ${T.build} h · nivel ${T.lv}`;
     return `<b>${Z.icon} ${names[T.z][T.lv]}</b>Nivel ${T.lv} · ${Z.cap[T.lv]} ${Z.noun}`;
   }
   if (WATER[i]) return '<b>🌊 Río</b>Solo se puede cruzar con un puente.';
@@ -1158,7 +1210,8 @@ function describe(i) {
 /* keyboard */
 let lastSpeed = S.speed || 1;
 addEventListener('keydown', (e) => {
-  if (e.target.matches('input, textarea')) return;
+  if (e.target.matches?.('input, textarea, select')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(); }
   const n = Number(e.key);
   if (n >= 1 && n <= CATEGORIES.length) selectTool(CATEGORIES[n - 1].tools[0].id);
   else if (e.key === 'Escape') { if (document.querySelector('.modal.open')) closeModals(); else selectTool('look'); }
@@ -1197,11 +1250,35 @@ function updateHud() {
   $('sJobs').textContent = `${fmt(Math.min(D.workers, D.jobsTotal))}/${fmt(D.jobsTotal)}`;
   if ($('approvalModal').classList.contains('open')) renderApproval();
   if ($('budgetModal').classList.contains('open')) renderBudgetNumbers();
+  renderAlerts();
+  placeTicker();
   const days = S.nextElection - S.day;
   $('sVote').textContent = `${D.vote} % voto`;
   $('sVote').style.color = D.vote >= 50 ? '' : 'var(--accent)';
   $('sElection').textContent = days <= 1 ? 'elecciones mañana' : `elecciones en ${days} días`;
 }
+
+// persistent problem chips under the top bar; each one leads to its fix
+function renderAlerts() {
+  const out = [], d = D;
+  if (d.emptyLots && !d.powerCap) out.push(['⚡', 'Sin central eléctrica no se muda nadie', 'power']);
+  else if (!d.powerOk) out.push(['⚡', 'Apagones: la ciudad gasta más luz de la que produce', 'power']);
+  else if (d.emptyLots && d.powerCap - d.powerUse < 5) out.push(['⚡', 'Red eléctrica al límite: la ciudad no puede crecer', 'power']);
+  if (d.emptyLots && !d.waterCap) out.push(['💧', 'Sin torre de agua no se muda nadie', 'water']);
+  else if (!d.waterOk) out.push(['💧', 'Grifos secos: falta agua', 'water']);
+  else if (d.emptyLots && d.waterCap - d.waterUse < 4) out.push(['💧', 'Agua al límite: la ciudad no puede crecer', 'water']);
+  if (S.money < 0) out.push(['📉', 'Números rojos: revisa el presupuesto', 'budget']);
+  const key = out.map((a) => a[1]).join('|');
+  if (key === renderAlerts.key) return;
+  renderAlerts.key = key;
+  $('alerts').innerHTML = out.map(([ic, text, fix]) => `<button class="alert" data-fix="${fix}">${ic} ${text} <b>Arreglar →</b></button>`).join('');
+}
+renderAlerts.key = null;
+$('alerts').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fix]');
+  if (!b) return;
+  if (b.dataset.fix === 'budget') openModal('budgetModal'); else selectTool(b.dataset.fix);
+});
 
 function openModal(id) {
   closeModals();
@@ -1429,12 +1506,35 @@ function newCity(skipConfirm = false) {
   S = newState();
   setStyle(S.style);
   $('styleSel').value = S.style;
-  rebuildAll(); agents.length = 0; walkers.length = 0;
+  rebuildAll(); agents.length = 0; walkers.length = 0; undoStack.length = 0; fireDirty = true;
   D = compute(); setSpeed(1); renderAdvisor(); updateHud(); save();
   news('Una nueva ciudad empieza hoy. ¡Suerte, alcaldía!');
   openModal('partyModal');
 }
 $('newCity').onclick = () => newCity();
+$('undoBtn').onclick = undo;
+for (const [id, modal] of [['menuBudget', 'budgetModal'], ['menuPolitics', 'politicsModal'], ['menuCitizens', 'citizensModal']]) $(id).onclick = () => openModal(modal);
+$('exportCity').onclick = () => {
+  const blob = new Blob([JSON.stringify(S)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${S.name.replace(/[^\w-]+/g, '_')}-dia${S.day}.urbania.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('importCity').onclick = () => $('importFile').click();
+$('importFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let next = null;
+  try { next = fromSave(JSON.parse(await file.text())); } catch { /* not JSON */ }
+  if (!next) return news('Ese archivo no es una partida de Urbania.', 'AVISO');
+  S = next; setStyle(S.style); $('styleSel').value = S.style;
+  undoStack.length = 0; agents.length = 0; walkers.length = 0;
+  rebuildAll(); D = compute(); fireDirty = true; setSpeed(S.speed || 1); renderAdvisor(); updateHud(); save();
+  news(`Partida cargada: ${S.name}, día ${S.day}.`, 'AJUSTES');
+};
 
 /* ---------------------------------------------------------------- living details */
 /* ---------------------------------------------------------------- traffic: cars, buses, vans, trucks, emergency vehicles */
@@ -1553,7 +1653,7 @@ function updateTraffic(dt) {
     const a = agents[n], R = ROLES[a.role];
     if (S.tiles[a.from].t !== 'road' || S.tiles[a.to].t !== 'road') { agents.splice(n, 1); continue; }
     const dx = (a.to % N) - (a.from % N), dz = ((a.to / N) | 0) - ((a.from / N) | 0);
-    let step = dt * a.v * k;
+    let step = dt * a.v * k * (a.path ? 1.6 : 1);
     if (a.wait > 0) { a.wait -= dt * k; step = 0; }
     // stop at red lights before junctions (emergency vehicles on call ignore them)
     const red = isJunction(a.to) && (dx !== 0) !== greenX && !(R.siren && a.alarm);
@@ -1562,10 +1662,16 @@ function updateTraffic(dt) {
     a.t += step;
     if (a.t >= 1) {
       if (a.role === 'bus' && isBusStop(a.to % N, (a.to / N) | 0)) a.wait = 2.5;
+      if (a.path) {
+        if (!a.path.length) engineArrived(a);
+        else { const next = a.path.shift(); a.from = a.to; a.to = S.tiles[next]?.t === 'road' ? next : a.from; a.t = 0; if (a.to === a.from) a.path = null; }
+      }
+      if (a.path) { /* on a mission: route already chosen */ } else {
       if (R.siren && Math.random() < 0.04) a.alarm = !a.alarm;
       const opts = roadNeighbours(a.to).filter((o) => o !== a.from);
       a.from = a.to; a.to = opts.length ? pick(Math.random, opts) : a.from; a.t = 0;
       if (a.to === a.from) { const back = roadNeighbours(a.from); if (back.length) a.to = back[0]; }
+      }
     }
     const fx = W(a.from % N), fz = W((a.from / N) | 0), tx = W(a.to % N), tz = W((a.to / N) | 0);
     const ddx = tx - fx, ddz = tz - fz, len = Math.hypot(ddx, ddz) || 1;
@@ -1712,6 +1818,132 @@ function updateSmoke(dt) {
   }
 }
 
+/* fires: buildings occasionally catch fire; fire engines drive there along the shortest road route */
+const FIRE_HOURS = 5;
+const FIRE_HEIGHT = { res: [0, 0.35, 0.65, 1.4], com: [0, 0.4, 0.62, 0.75], off: [0, 0.75, 1.45, 2.4], ind: [0, 0.4, 0.5, 0.55] };
+function roadPath(from, to) {
+  const prev = new Map([[from, -1]]), queue = [from];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === to) break;
+    for (const n of roadNeighbours(cur)) if (!prev.has(n)) { prev.set(n, cur); queue.push(n); }
+  }
+  if (!prev.has(to)) return null;
+  const path = [];
+  for (let c = to; c !== from; c = prev.get(c)) path.unshift(c);
+  return path;
+}
+function fireCovered(x, z) {
+  return D.svcList.some(([s, sx, sz]) => s === 'fire' && Math.hypot(sx - x, sz - z) <= radiusOf('fire'));
+}
+function fireTick(d) {
+  let burning = 0;
+  S.tiles.forEach((T, i) => {
+    if (!(T.fire > 0)) return;
+    burning++;
+    T.fire--;
+    const x = i % N, z = (i / N) | 0;
+    // an engine on its way always makes it within the station's radius
+    if (!T.saved && T.fire <= 2 && fireCovered(x, z)) T.saved = true;
+    if (T.fire <= 0) {
+      T.fire = 0;
+      if (T.saved) { news('Los bomberos apagan el incendio a tiempo. No hay heridos.', 'SUCESOS'); }
+      else {
+        news(`El fuego destruye un edificio de ${S.name}. Los vecinos piden un parque de bomberos.`, 'SUCESOS');
+        T.lv = 0; T.prev = 0; T.build = 0; T.ruin = S.day + 2;
+        S.burnDay = S.day;
+      }
+      T.saved = false;
+      refreshTile(i);
+      fireDirty = true;
+    } else if (T.saved && T.fire > 1) T.fire = 1;
+  });
+  if (burning >= 2 || !d.pop) return;
+  const cand = [];
+  S.tiles.forEach((T, i) => { if (T.t === 'zone' && T.lv > 0 && !(T.build > 0) && !(T.fire > 0)) cand.push(i); });
+  for (const i of cand) {
+    const x = i % N, z = (i / N) | 0, covered = fireCovered(x, z);
+    // ~1 fire every 2–3 days in a city of 200 buildings; fire cover makes it three times rarer
+    const risk = 0.00008 * (covered ? 0.3 : 1) * (S.tiles[i].z === 'ind' ? 2 : 1) * (law('industria') ? 1.5 : 1);
+    if (Math.random() >= risk) continue;
+    startFire(i, covered);
+    break;
+  }
+}
+function startFire(i, covered) {
+  const T = S.tiles[i], x = i % N, z = (i / N) | 0;
+  T.fire = FIRE_HOURS; T.saved = false;
+  fireDirty = true;
+  const names = { res: 'una vivienda', com: 'un comercio', off: 'unas oficinas', ind: 'una fábrica' };
+  news(`🔥 Incendio en ${names[T.z]}${covered ? '. Los bomberos ya van de camino.' : ' y no hay bomberos cerca.'}`, 'SUCESOS');
+  if (!covered) return;
+  const goal = nearestRoad(x, z);
+  const engines = agents.filter((a) => a.role === 'fire');
+  if (goal < 0 || !engines.length) { T.saved = true; return; }
+  let best = null, bestLen = Infinity;
+  for (const a of engines) { const p = roadPath(a.to, goal); if (p && p.length < bestLen) { best = a; bestLen = p.length; best.plan = p; } }
+  if (!best) { T.saved = true; return; }
+  best.path = best.plan; best.alarm = true; best.target = i;
+}
+// called by traffic when an engine on a mission reaches the end of its route
+function engineArrived(a) {
+  const T = S.tiles[a.target];
+  if (T && T.fire > 0) { T.saved = true; T.fire = Math.min(T.fire, 1); }
+  a.path = null; a.target = -1; a.wait = 3;
+}
+
+const flameTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), grd = g.createRadialGradient(32, 40, 2, 32, 34, 30);
+  grd.addColorStop(0, 'rgba(255,240,180,1)'); grd.addColorStop(0.35, 'rgba(255,150,40,0.9)'); grd.addColorStop(1, 'rgba(220,40,10,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const flames = [], blackSmoke = [];
+for (let k = 0; k < 60; k++) {
+  const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: flameTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+  f.visible = false; scene.add(f); flames.push({ s: f, life: 0 });
+  const sm = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0x3b3a38, transparent: true, depthWrite: false, opacity: 0 }));
+  sm.visible = false; scene.add(sm); blackSmoke.push({ s: sm, life: 0 });
+}
+let fireDirty = true, fireSpots = [], fireClock = 0;
+function updateFires(dt) {
+  if (fireDirty) {
+    fireSpots = [];
+    S.tiles.forEach((T, i) => {
+      if (T.fire > 0) fireSpots.push(new THREE.Vector3(W(i % N), FIRE_HEIGHT[T.z][T.lv] || 0.4, W((i / N) | 0)));
+    });
+    fireDirty = false;
+  }
+  fireClock += dt;
+  while (fireClock > 0.05 && fireSpots.length) {
+    fireClock -= 0.05;
+    const at = pick(Math.random, fireSpots);
+    const f = flames.find((q) => q.life <= 0), sm = Math.random() < 0.4 && blackSmoke.find((q) => q.life <= 0);
+    if (f) { f.s.position.set(at.x + (Math.random() - 0.5) * 0.4, at.y * (0.4 + Math.random() * 0.7), at.z + (Math.random() - 0.5) * 0.4); f.life = 1; f.s.visible = true; }
+    if (sm) { sm.s.position.set(at.x, at.y + 0.1, at.z); sm.life = 1; sm.s.visible = true; }
+  }
+  if (!fireSpots.length) fireClock = 0;
+  for (const f of flames) {
+    if (f.life <= 0) continue;
+    f.life -= dt * 1.6;
+    f.s.position.y += dt * 0.5;
+    const sc = 0.12 + f.life * 0.22;
+    f.s.scale.set(sc, sc * 1.4, sc);
+    f.s.material.opacity = Math.max(0, f.life);
+    if (f.life <= 0) f.s.visible = false;
+  }
+  for (const p of blackSmoke) {
+    if (p.life <= 0) continue;
+    p.life -= dt * 0.3;
+    p.s.position.y += dt * 0.6; p.s.position.x += dt * 0.15;
+    const sc = 0.3 + (1 - p.life) * 1.1;
+    p.s.scale.set(sc, sc, sc);
+    p.s.material.opacity = Math.max(0, p.life) * 0.7;
+    if (p.life <= 0) p.s.visible = false;
+  }
+}
+
 const RAIN = 1400;
 const rain = (() => {
   const pos = new Float32Array(RAIN * 6);
@@ -1792,6 +2024,7 @@ function frame() {
   updateBirds(dt);
   for (const h of rotors.values()) h.userData.rotor.rotation.z += dt * (S.speed ? 1.6 + S.speed * 0.4 : 0.4);
   updateSmoke(dt);
+  updateFires(dt);
   updateRain(dt);
   updateLighting();
   if (treesDirty) {
@@ -1812,6 +2045,7 @@ function frame() {
 function placeTicker() {
   const bar = document.querySelector('.topbar').getBoundingClientRect();
   if (innerWidth > 900) document.querySelector('.ticker').style.top = `${bar.bottom + 8}px`;
+  $('alerts').style.top = `${bar.bottom + (innerWidth > 900 ? 52 : 8)}px`;
 }
 addEventListener('resize', () => {
   placeTicker();
@@ -1831,5 +2065,5 @@ updateHud();
 placeTicker();
 news(D.pop ? `Bienvenido de nuevo a ${S.name}.` : 'Bienvenida, alcaldía. Empieza trazando una calle junto al río.');
 if (!S.party) openModal('partyModal');
-window.__urbania = { renderer, election, LAWS, agents, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
+window.__urbania = { renderer, election, LAWS, agents, startFire, fireCovered, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
 frame();

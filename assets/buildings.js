@@ -43,6 +43,7 @@ export const GEO = {
   pyramid: prep(new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0)),
   cone: prep(new THREE.ConeGeometry(0.5, 1, 8).translate(0, 0.5, 0)),
   ico: prep(new THREE.IcosahedronGeometry(0.5, 0)),
+  frustum: prep(new THREE.CylinderGeometry(0.32, 0.5, 1, 14).translate(0, 0.5, 0)),
   gable: (() => {
     const s = new THREE.Shape();
     s.moveTo(-0.5, 0); s.lineTo(0.5, 0); s.lineTo(0, 1); s.closePath();
@@ -124,23 +125,89 @@ export class Builder {
 
 /* ---------------------------------------------------------------- building designs (local space, front = +z) */
 const AWNINGS = [0xd9553f, 0x3f7fbf, 0x4f9a5a, 0xe0a83a, 0x8a5fbf];
-const LOT_GRASS = 0x9cc47a, LOT_PAVED = 0xcfc8ba, LOT_IND = 0xb8b09f, PATH = 0xe3dac8;
+const LOT_GRASS = 0x9cc47a, LOT_PAVED = 0xcfc8ba, LOT_IND = 0xb8b09f, PATH = 0xe3dac8, ASPHALT = 0x5a5d64;
+const TRIM = 0xf6f1e6, GLASS_DARK = 0x3d4a5c, DOOR = 0x6b4a33, METAL = 0x8d949b, CONCRETE = 0xcfc9bd;
+const CAR_TINTS = [0xd8342a, 0x2f5fb5, 0xf2efe6, 0x3b3f46, 0xe0a83a, 0x4f9a5a, 0x9aa0a6];
+
+// one framed window (frame, glass that may light up at night, sill) on the face of a block
+function framedWindow(b, r, x, y, z, face, w, h, lit, frame = TRIM) {
+  const along = face === 'x' ? [0.012, w] : [w, 0.012];
+  b.box(x, y - 0.01, z, along[0] + (face === 'x' ? 0.004 : 0.02), h + 0.02, along[1] + (face === 'x' ? 0.02 : 0.004), frame);
+  const gx = face === 'x' ? Math.sign(x) * 0.004 : 0, gz = face === 'z' ? Math.sign(z) * 0.004 : 0;
+  b.box(x + gx, y, z + gz, along[0], h, along[1], GLASS_DARK, r() < lit ? 1 : 0);
+  b.box(x + gx * 2, y - 0.018, z + gz * 2, face === 'x' ? 0.02 : w + 0.03, 0.012, face === 'x' ? w + 0.03 : 0.02, frame);
+}
+// framed windows on every face of a w×d block; skips the front-centre ground-floor slot for the door
+function framedWindows(b, r, cx, cz, w, d, y0, floors, fh, lit = 0.45, frame = TRIM, skipDoor = true) {
+  for (let f = 0; f < floors; f++) {
+    const y = y0 + f * fh + fh * 0.3;
+    for (const [len, other, face] of [[w, d, 'z'], [d, w, 'x']]) {
+      const n = Math.max(1, Math.floor(len / 0.19));
+      for (let k = 0; k < n; k++) {
+        const o = -len / 2 + (k + 0.5) * (len / n);
+        for (const side of [-1, 1]) {
+          if (skipDoor && f === 0 && face === 'z' && side === 1 && Math.abs(o) < 0.08) continue;
+          if (face === 'z') framedWindow(b, r, cx + o, y, cz + side * (other / 2 + 0.004), 'z', 0.075, fh * 0.42, lit, frame);
+          else framedWindow(b, r, cx + side * (other / 2 + 0.004), y, cz + o, 'x', 0.075, fh * 0.42, lit, frame);
+        }
+      }
+    }
+  }
+}
+function parkedCar(b, r, x, z, ry = 0) {
+  const c = pick(r, CAR_TINTS);
+  b.add(GEO.box, c, x, 0.02, z, 0.12, 0.06, 0.24, ry).add(GEO.box, 0x2e3a48, x, 0.08, z, 0.108, 0.05, 0.12, ry);
+}
+function parkingLot(b, r, x, z, w, d, spots) {
+  b.box(x, 0.004, z, w, 0.02, d, ASPHALT);
+  for (let k = 0; k <= spots; k++) b.box(x - w / 2 + (k * w) / spots, 0.024, z, 0.012, 0.002, d * 0.7, 0xf2efe6);
+  for (let k = 0; k < spots; k++) if (r() < 0.65) parkedCar(b, r, x - w / 2 + ((k + 0.5) * w) / spots, z + (r() - 0.5) * 0.04);
+}
+function roofUnits(b, r, x, y, z, w, d, n = 3) {
+  for (let k = 0; k < n; k++) b.box(x + (r() - 0.5) * w * 0.7, y, z + (r() - 0.5) * d * 0.7, 0.07 + r() * 0.05, 0.05, 0.07, 0xb9bec4);
+}
+function fence(b, x0, x1, z, color = TRIM) {
+  b.box((x0 + x1) / 2, 0.03, z, x1 - x0, 0.025, 0.012, color);
+  for (let x = x0; x <= x1 + 1e-6; x += 0.07) b.box(x, 0, z, 0.014, 0.065, 0.014, color);
+}
 
 function house(b, r, x, z, w, d, floors, opts = {}) {
   const wall = opts.wall ?? pick(r, STYLE.walls), roof = opts.roof ?? pick(r, STYLE.roofs), fh = 0.27, h = fh * floors;
-  b.box(x, 0, z, w, h, d, wall);
+  const frame = wall === 0xffffff || wall === 0xfaf6ee ? 0x6b7b8c : TRIM;
+  b.box(x, 0, z, w, 0.04, d, 0xb9ad99); // plinth
+  b.box(x, 0.04, z, w, h - 0.04, d, wall);
+  if (floors > 1) b.box(x, fh, z, w + 0.012, 0.018, d + 0.012, frame); // string course between floors
   if (STYLE.roof === 'flat') {
-    b.box(x, h, z, w + 0.03, 0.05, d + 0.03, roof).box(x - w * 0.15, h + 0.05, z, w * 0.4, 0.14, d * 0.6, wall);
+    b.box(x, h, z, w + 0.03, 0.05, d + 0.03, roof).box(x - w * 0.15, h + 0.05, z - d * 0.1, w * 0.4, 0.14, d * 0.5, wall);
+    b.box(x + w * 0.2, h + 0.05, z + d * 0.15, w * 0.3, 0.012, d * 0.3, 0x2c4f7c); // solar panel
   } else if (STYLE.roof === 'hip') {
-    b.add(GEO.pyramid, roof, x, h, z, w + 0.1, 0.18 + 0.03 * floors, d + 0.1);
+    b.box(x, h, z, w + 0.1, 0.02, d + 0.1, roof);
+    b.add(GEO.pyramid, roof, x, h + 0.02, z, w + 0.1, 0.18 + 0.03 * floors, d + 0.1);
   } else {
-    const along = opts.turn ? Math.PI / 2 : 0;
-    b.add(GEO.gable, roof, x, h, z, (opts.turn ? d : w) + 0.08, 0.24 + 0.04 * floors, (opts.turn ? w : d) + 0.08, along);
+    const turn = !!opts.turn, rh = 0.24 + 0.04 * floors;
+    const gw = (turn ? d : w) + 0.1, gd = (turn ? w : d) + 0.1;
+    b.add(GEO.gable, roof, x, h, z, gw, rh, gd, turn ? Math.PI / 2 : 0);
+    b.add(GEO.box, 0x3b2b2b, x, h + rh - 0.012, z, 0.035, 0.03, gd + 0.01, turn ? Math.PI / 2 : 0); // ridge
+    if (turn && w > 0.5) { // dormer on the front slope
+      const dz = z + d * 0.18, dy = h + rh * 0.25;
+      b.box(x, dy, dz, 0.14, 0.1, 0.12, wall).add(GEO.gable, roof, x, dy + 0.1, dz, 0.18, 0.08, 0.16);
+      b.box(x, dy + 0.025, dz + 0.061, 0.07, 0.06, 0.006, GLASS_DARK, r() < 0.5 ? 1 : 0);
+    }
   }
-  b.windows(x, z, w, d, 0, floors, fh, r, 0.45);
-  b.box(x, 0, z + d / 2 + 0.004, 0.1, 0.17, 0.014, 0x6b4a33);
-  if (STYLE.roof === 'gable' && r() < 0.55) b.box(x + w * 0.28, h, z - d * 0.15, 0.07, 0.32, 0.07, 0x9c4f3b);
+  framedWindows(b, r, x, z, w, d, 0.02, floors, fh, 0.45, frame);
+  // door with frame and step
+  b.box(x, 0.04, z + d / 2 + 0.006, 0.12, 0.2, 0.012, frame).box(x, 0.04, z + d / 2 + 0.01, 0.09, 0.18, 0.012, opts.door ?? DOOR);
+  b.box(x, 0, z + d / 2 + 0.04, 0.16, 0.04, 0.07, 0xd8d2c4);
+  if (STYLE.roof === 'gable' && r() < 0.6) {
+    const cx = x + w * 0.28, cz = z - d * 0.15;
+    b.box(cx, h, cz, 0.07, 0.34, 0.07, 0x9c4f3b).box(cx, h + 0.34, cz, 0.09, 0.02, 0.09, 0x6b4a33);
+  }
   return h;
+}
+function porch(b, x, z, w, wall) {
+  b.box(x, 0, z, w, 0.04, 0.14, 0xd8d2c4);
+  for (const s of [-1, 1]) b.box(x + s * (w / 2 - 0.02), 0.04, z + 0.05, 0.02, 0.2, 0.02, TRIM);
+  b.box(x, 0.24, z, w + 0.02, 0.025, 0.16, wall);
 }
 
 // flower beds, a side hedge and a letterbox for houses with a garden
@@ -153,75 +220,165 @@ function garden(b, r) {
 export function resBuilding(b, lv, r) {
   if (lv === 1) {
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
-    b.box(0, 0.005, 0.36, 0.14, 0.02, 0.28, PATH);
-    house(b, r, (r() - 0.5) * 0.08, -0.06, 0.62 + r() * 0.14, 0.52 + r() * 0.1, 1 + (r() < 0.25 ? 1 : 0), { turn: r() < 0.3 });
-    if (r() < 0.6) b.tree(r() < 0.5 ? -0.4 : 0.4, -0.38, 0.7 + r() * 0.3);
-    b.box(-0.3, 0, 0.47, 0.36, 0.06, 0.03, 0xf4efe4).box(0.3, 0, 0.47, 0.36, 0.06, 0.03, 0xf4efe4);
+    const garage = r() < 0.45, hx = garage ? -0.1 : (r() - 0.5) * 0.08, w = garage ? 0.56 : 0.62 + r() * 0.12;
+    const wall = pick(r, STYLE.walls);
+    b.box(hx, 0.005, 0.37, 0.12, 0.02, 0.26, PATH);
+    house(b, r, hx, -0.08, w, 0.5 + r() * 0.08, 1 + (r() < 0.25 ? 1 : 0), { turn: r() < 0.45, wall });
+    if (r() < 0.5) porch(b, hx, 0.23, 0.3, wall);
+    if (garage) {
+      b.box(0.33, 0, -0.02, 0.26, 0.24, 0.36, wall).box(0.33, 0.24, -0.02, 0.29, 0.03, 0.39, 0x8d8579);
+      b.box(0.33, 0.02, 0.165, 0.2, 0.17, 0.008, 0xe8e4dc).box(0.33, 0.005, 0.33, 0.2, 0.02, 0.3, 0xbdb7aa);
+      if (r() < 0.6) parkedCar(b, r, 0.33, 0.34);
+    }
+    if (r() < 0.6) b.tree(r() < 0.5 ? -0.4 : 0.4, -0.4, 0.7 + r() * 0.3);
+    fence(b, -0.48, -0.08, 0.47); fence(b, 0.08, garage ? 0.2 : 0.48, 0.47);
     garden(b, r);
   } else if (lv === 2) {
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_GRASS);
-    b.box(0, 0.005, 0.38, 0.14, 0.02, 0.24, PATH);
-    const w = 0.74 + r() * 0.1;
-    house(b, r, 0, -0.05, w, 0.62, 2, { turn: r() < 0.3 });
+    b.box(0, 0.005, 0.39, 0.14, 0.02, 0.22, PATH);
+    const w = 0.74 + r() * 0.1, wall = pick(r, STYLE.walls);
+    house(b, r, 0, -0.06, w, 0.6, 2, { turn: r() < 0.4, wall });
+    porch(b, 0, 0.27, 0.36, wall);
     if (r() < 0.45) { // corner turret, victorian style
-      const tx = w / 2 - 0.02, tz = 0.18;
-      b.add(GEO.cyl, 0xe9d3a6, tx, 0, tz, 0.2, 0.68, 0.2).add(GEO.cone, 0xb5483b, tx, 0.68, tz, 0.26, 0.3, 0.26);
+      const tx = w / 2 - 0.02, tz = 0.16;
+      b.add(GEO.cyl, 0xe9d3a6, tx, 0, tz, 0.2, 0.7, 0.2).add(GEO.cone, 0xb5483b, tx, 0.7, tz, 0.26, 0.3, 0.26);
+      b.box(tx, 0.98, tz, 0.012, 0.08, 0.012, 0x3b3f46);
+    } else if (r() < 0.5) { // side bay window
+      b.box(-w / 2 - 0.05, 0.04, -0.06, 0.1, 0.22, 0.22, wall).box(-w / 2 - 0.1, 0.1, -0.06, 0.008, 0.1, 0.16, GLASS_DARK, r() < 0.5 ? 1 : 0);
     }
-    if (r() < 0.6) b.tree(-0.38, -0.36, 0.9);
+    if (r() < 0.6) b.tree(-0.4, -0.4, 0.9);
+    fence(b, -0.48, -0.09, 0.47); fence(b, 0.09, 0.48, 0.47);
     garden(b, r);
-  } else if (r() < 0.35) { // row of town houses
+  } else if (r() < 0.35) { // row of town houses with stoops
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
-    for (let k = -1; k <= 1; k++) house(b, r, k * 0.3, 0, 0.28, 0.6, 3, { turn: true });
-  } else { // apartment block
+    for (let k = -1; k <= 1; k++) {
+      house(b, r, k * 0.31, -0.04, 0.29, 0.62, 3, { turn: true });
+      b.box(k * 0.31, 0, 0.3, 0.12, 0.06, 0.08, 0xd8d2c4);
+    }
+    for (const x of [-0.4, 0, 0.4]) b.tree(x, 0.44, 0.45);
+  } else { // apartment block with balconies, cornices and a busy roof
     b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
-    const floors = 4 + Math.floor(r() * 3), fh = 0.26, w = 0.78, d = 0.66, wall = pick(r, STYLE.walls);
-    b.box(0, 0, -0.04, w, floors * fh, d, wall);
-    b.box(0, floors * fh, -0.04, w + 0.03, 0.05, d + 0.03, 0x8d8579);
-    b.box(0.2, floors * fh, -0.1, 0.18, 0.12, 0.16, 0x9aa0a6);
-    b.windows(0, -0.04, w, d, 0, floors, fh, r, 0.5);
-    for (let f = 1; f < floors; f++) b.box(0, f * fh, d / 2 - 0.04 + 0.03, w * 0.7, 0.02, 0.06, 0xf4efe4);
-    b.tree(-0.4, 0.4, 0.7);
+    const floors = 4 + Math.floor(r() * 3), fh = 0.26, w = 0.8, d = 0.66, wall = pick(r, STYLE.walls), cz = -0.05;
+    b.box(0, 0, cz, w, fh, d, 0x9a8f80); // ground floor base
+    b.box(0, fh, cz, w, (floors - 1) * fh, d, wall);
+    for (let f = 1; f <= floors; f++) b.box(0, f * fh - 0.012, cz, w + 0.02, 0.022, d + 0.02, TRIM);
+    framedWindows(b, r, 0, cz, w, d, fh, floors - 1, fh, 0.5, TRIM, false);
+    // shop fronts and entrance canopy on the ground floor
+    b.box(0, 0.04, cz + d / 2 + 0.004, w * 0.86, 0.15, 0.012, 0x9fc6db, 1);
+    b.box(0, 0.2, cz + d / 2 + 0.06, 0.24, 0.02, 0.12, 0x3b3f46).box(0, 0.02, cz + d / 2 + 0.006, 0.12, 0.17, 0.014, DOOR);
+    // balconies on the front
+    for (let f = 1; f < floors; f++) for (const x of [-0.24, 0.24]) {
+      b.box(x, f * fh + 0.01, cz + d / 2 + 0.05, 0.2, 0.02, 0.1, CONCRETE);
+      b.box(x, f * fh + 0.03, cz + d / 2 + 0.098, 0.2, 0.07, 0.006, 0x9fb7c9).box(x, f * fh + 0.1, cz + d / 2 + 0.098, 0.2, 0.008, 0.008, METAL);
+    }
+    const top = floors * fh;
+    b.box(0, top, cz, w + 0.03, 0.05, d + 0.03, 0x8d8579);
+    b.box(-0.22, top + 0.05, cz - 0.1, 0.2, 0.16, 0.18, wall);
+    b.add(GEO.cyl, 0x9aa0a6, 0.2, top + 0.13, cz - 0.12, 0.14, 0.14, 0.14);
+    for (const [px, pz] of [[0.15, -0.17], [0.25, -0.17], [0.15, -0.07], [0.25, -0.07]]) b.box(px, top + 0.05, pz + cz, 0.012, 0.08, 0.012, METAL);
+    roofUnits(b, r, 0.1, top + 0.05, cz + 0.15, 0.4, 0.2, 2);
+    b.tree(-0.42, 0.42, 0.6).tree(0.42, 0.42, 0.6);
   }
 }
 
 export function comBuilding(b, lv, r) {
-  b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
   const wall = pick(r, STYLE.walls), aw = pick(r, AWNINGS);
   if (lv === 1) {
-    const w = 0.72, d = 0.56, h = 0.34;
-    b.box(0, 0, -0.08, w, h, d, wall).box(0, h, -0.08, w + 0.03, 0.04, d + 0.03, 0x8d8579);
-    b.box(0, 0.05, 0.2 + 0.002, w * 0.8, 0.16, 0.012, 0x9fc6db, 1);
-    b.add(GEO.box, aw, 0, 0.24, 0.26, w * 0.9, 0.03, 0.16);
-    b.box(0, h + 0.04, 0.12, 0.4, 0.1, 0.03, aw);
-    b.tree(0.4, 0.42, 0.6);
+    const kind = r();
+    if (kind < 0.3) { // café with a terrace of umbrellas
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, 0xe3d6bd);
+      b.box(0, 0, -0.18, 0.72, 0.36, 0.5, wall).box(0, 0.36, -0.18, 0.75, 0.04, 0.53, 0x8d8579);
+      b.box(0, 0.05, 0.072, 0.6, 0.18, 0.012, 0x9fc6db, 1);
+      framedWindows(b, r, 0, -0.18, 0.72, 0.5, 0.2, 1, 0.2, 0.3, TRIM, false);
+      for (let k = 0; k < 6; k++) b.box(-0.3 + k * 0.12, 0.26, 0.13, 0.12, 0.025, 0.12, k % 2 ? 0xf6f1e6 : aw);
+      for (const [x, zz] of [[-0.26, 0.32], [0.04, 0.36], [0.3, 0.3]]) {
+        b.box(x, 0, zz, 0.012, 0.18, 0.012, METAL).add(GEO.cone, pick(r, AWNINGS), x, 0.15, zz, 0.2, 0.06, 0.2);
+        b.add(GEO.cyl, 0xf6f1e6, x, 0.06, zz, 0.08, 0.008, 0.08);
+      }
+    } else if (kind < 0.5) { // petrol station
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, ASPHALT);
+      b.box(-0.24, 0, -0.26, 0.42, 0.26, 0.34, 0xf2efe6).box(-0.24, 0.26, -0.26, 0.44, 0.04, 0.36, aw);
+      b.box(-0.24, 0.04, -0.088, 0.3, 0.14, 0.008, 0x9fc6db, 1);
+      for (const [x, zz] of [[0.12, 0.1], [0.38, 0.1], [0.12, 0.34], [0.38, 0.34]]) b.box(x, 0, zz, 0.025, 0.3, 0.025, 0xe8e4dc);
+      b.box(0.25, 0.3, 0.22, 0.4, 0.04, 0.38, aw).box(0.25, 0.32, 0.22, 0.42, 0.02, 0.4, 0xfff2c4, 1);
+      for (const x of [0.18, 0.32]) b.box(x, 0.02, 0.22, 0.05, 0.12, 0.04, 0xd8342a);
+      b.box(0.42, 0, -0.38, 0.03, 0.5, 0.03, METAL).box(0.42, 0.42, -0.38, 0.12, 0.12, 0.02, aw);
+      if (r() < 0.7) parkedCar(b, r, 0.12, 0.22);
+    } else { // corner shop with a striped awning
+      b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+      const w = 0.74, d = 0.56, h = 0.38;
+      b.box(0, 0, -0.08, w, h, d, wall).box(0, h, -0.08, w + 0.03, 0.04, d + 0.03, 0x8d8579);
+      b.box(0, 0.04, 0.2 + 0.004, w * 0.82, 0.18, 0.012, 0x9fc6db, 1).box(0, 0.02, 0.2 + 0.006, 0.12, 0.19, 0.014, DOOR);
+      for (let k = 0; k < 6; k++) b.box(-w * 0.45 + (k + 0.5) * (w * 0.9 / 6), 0.26, 0.27, w * 0.9 / 6, 0.025, 0.15, k % 2 ? 0xf6f1e6 : aw);
+      b.box(0, h + 0.04, 0.14, 0.42, 0.11, 0.03, aw).box(0, h + 0.065, 0.157, 0.32, 0.05, 0.004, 0xf6f1e6);
+      roofUnits(b, r, 0, h + 0.04, -0.15, 0.5, 0.3, 2);
+      b.tree(0.42, 0.42, 0.55);
+    }
   } else if (lv === 2) {
-    const w = 0.84, d = 0.66, fh = 0.3;
-    b.box(0, 0, -0.06, w, fh * 2, d, wall).box(0, fh * 2, -0.06, w + 0.03, 0.04, d + 0.03, 0x8d8579);
-    b.box(0, 0.05, d / 2 - 0.06 + 0.002, w * 0.85, 0.18, 0.012, 0x9fc6db, 1);
-    b.add(GEO.box, aw, 0, 0.26, d / 2 - 0.06 + 0.07, w * 0.92, 0.03, 0.14);
-    b.windows(0, -0.06, w, d, fh, 1, fh, r, 0.5);
-    b.box(-0.2, fh * 2, -0.15, 0.16, 0.1, 0.16, 0x9aa0a6);
-  } else {
-    const w = 0.92, d = 0.84, fh = 0.3;
-    b.box(0, 0, -0.02, w, fh * 3, d, wall);
-    for (let f = 0; f < 3; f++) b.box(0, f * fh + 0.08, -0.02, w + 0.01, 0.14, d + 0.01, 0x8fb7cf, f === 0 ? 1 : 0);
-    b.box(0, fh * 3, -0.02, w + 0.03, 0.05, d + 0.03, aw);
-    b.box(0, fh * 3 + 0.05, d / 2 - 0.1, 0.5, 0.14, 0.04, aw);
+    b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+    const w = 0.86, d = 0.5, fh = 0.3, cz = -0.2;
+    b.box(0, 0, cz, w, fh * 2, d, wall).box(0, fh * 2, cz, w + 0.03, 0.05, d + 0.03, 0x8d8579);
+    b.box(0, fh, cz, w + 0.012, 0.02, d + 0.012, TRIM);
+    b.box(0, 0.04, cz + d / 2 + 0.004, w * 0.88, 0.2, 0.012, 0x9fc6db, 1);
+    for (let k = -1; k <= 1; k++) b.box(k * 0.28, 0.24, cz + d / 2 + 0.06, 0.24, 0.025, 0.12, pick(r, AWNINGS));
+    framedWindows(b, r, 0, cz, w, d, fh, 1, fh, 0.5, TRIM, false);
+    b.box(0, fh * 2 + 0.05, cz + d / 2 - 0.02, 0.5, 0.12, 0.03, aw).box(0, fh * 2 + 0.08, cz + d / 2 - 0.003, 0.4, 0.06, 0.004, 0xf6f1e6, 1);
+    roofUnits(b, r, 0, fh * 2 + 0.05, cz - 0.05, 0.6, 0.3, 3);
+    parkingLot(b, r, 0, 0.28, 0.9, 0.34, 4);
+  } else { // shopping centre with a glass atrium and a car park
+    b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
+    const w = 0.94, d = 0.56, fh = 0.3, cz = -0.2;
+    b.box(0, 0, cz, w, fh * 2.4, d, wall);
+    for (let f = 0; f < 2; f++) b.box(0, f * fh + 0.1, cz, w + 0.008, 0.12, d + 0.008, 0x8fb7cf, f === 0 ? 1 : 0);
+    b.box(0, 0, cz + d / 2 + 0.03, 0.3, fh * 2.2, 0.08, 0x9fc6db, 1);
+    b.box(0, fh * 2.2, cz + d / 2 + 0.03, 0.34, 0.03, 0.1, TRIM);
+    b.box(0, fh * 2.4, cz, w + 0.03, 0.05, d + 0.03, aw);
+    b.box(-0.28, fh * 2.4 + 0.05, cz + d / 2 - 0.02, 0.3, 0.12, 0.03, aw).box(-0.28, fh * 2.4 + 0.08, cz + d / 2 - 0.003, 0.24, 0.06, 0.004, 0xf6f1e6, 1);
+    for (const x of [-0.25, 0.05, 0.3]) b.box(x, fh * 2.4 + 0.05, cz - 0.05, 0.16, 0.04, 0.16, 0x9fc6db);
+    parkingLot(b, r, 0, 0.3, 0.94, 0.34, 6);
   }
 }
 
 export function offBuilding(b, lv, r) {
   b.box(0, 0, 0, 0.98, 0.02, 0.98, LOT_PAVED);
   const glass = pick(r, STYLE.glass), frame = pick(r, [0xe8e4dc, 0x9aa0a6, 0x4a4f57, 0xd6c3a5]);
-  const floors = lv === 1 ? 3 : lv === 2 ? 6 : 10, fh = 0.24, w = lv === 3 ? 0.68 : 0.74, d = lv === 3 ? 0.68 : 0.7;
-  b.box(0, 0, 0, w, floors * fh, d, frame);
-  for (let f = 0; f < floors; f++) b.box(0, f * fh + 0.07, 0, w + 0.008, fh * 0.5, d + 0.008, glass, r() < 0.25 ? 1 : 0);
-  b.box(0, floors * fh, 0, w * 0.6, 0.12, d * 0.6, frame);
-  if (lv === 3) {
-    b.box(0, floors * fh + 0.12, 0, w * 0.45, 0.4, d * 0.45, glass);
-    b.box(0, floors * fh + 0.52, 0, 0.02, 0.5, 0.02, 0xcfcfcf);
+  const round = lv === 3 && r() < 0.3;
+  const floors = lv === 1 ? 3 : lv === 2 ? 6 : 10, fh = 0.24, w = lv === 3 ? 0.62 : 0.72, d = lv === 3 ? 0.62 : 0.66;
+  // podium with a glass lobby
+  b.box(0, 0, 0, w + 0.12, fh, d + 0.12, 0x6f7780);
+  b.box(0, 0.03, (d + 0.12) / 2 + 0.003, w * 0.7, fh * 0.75, 0.012, 0x9fc6db, 1);
+  b.box(0, fh * 0.8, (d + 0.12) / 2 + 0.05, w * 0.5, 0.02, 0.1, frame);
+  if (round) {
+    const H = floors * fh;
+    b.add(GEO.cyl, frame, 0, fh, 0, w, H - fh, w);
+    for (let f = 1; f < floors; f++) b.add(GEO.cyl, glass, 0, f * fh + 0.05, 0, w + 0.012, fh * 0.6, w + 0.012, 0, r() < 0.25 ? 1 : 0);
+    b.add(GEO.cyl, frame, 0, H, 0, w * 0.7, 0.2, w * 0.7).box(0, H + 0.2, 0, 0.015, 0.55, 0.015, 0xcfcfcf);
+  } else {
+    const H = floors * fh;
+    b.box(0, fh, 0, w, H - fh, d, frame);
+    for (let f = 1; f < floors; f++) b.box(0, f * fh + 0.05, 0, w + 0.008, fh * 0.62, d + 0.008, glass, r() < 0.25 ? 1 : 0);
+    // vertical mullions over the glass
+    for (const [len, other, axis] of [[w, d, 'x'], [d, w, 'z']]) {
+      const n = Math.floor(len / 0.1);
+      for (let k = 1; k < n; k++) {
+        const o = -len / 2 + (k * len) / n;
+        for (const s of [-1, 1]) {
+          if (axis === 'x') b.box(o, fh, s * (other / 2 + 0.008), 0.012, H - fh, 0.012, frame);
+          else b.box(s * (other / 2 + 0.008), fh, o, 0.012, H - fh, 0.012, frame);
+        }
+      }
+    }
+    b.box(0, H, 0, w + 0.02, 0.04, d + 0.02, frame);
+    if (lv === 3) { // set-back crown and helipad or antenna
+      b.box(0, H + 0.04, 0, w * 0.7, 0.3, d * 0.7, glass).box(0, H + 0.34, 0, w * 0.74, 0.03, d * 0.74, frame);
+      if (r() < 0.5) {
+        b.add(GEO.cyl, 0x4a4f57, 0, H + 0.37, 0, w * 0.6, 0.01, w * 0.6);
+        b.box(-0.05, H + 0.381, 0, 0.02, 0.002, 0.14, 0xf2efe6).box(0.05, H + 0.381, 0, 0.02, 0.002, 0.14, 0xf2efe6).box(0, H + 0.381, 0, 0.1, 0.002, 0.02, 0xf2efe6);
+      } else b.box(0, H + 0.37, 0, 0.02, 0.6, 0.02, 0xcfcfcf).box(0, H + 0.96, 0, 0.04, 0.03, 0.04, 0xff4b4b, 1);
+    } else roofUnits(b, r, 0, H + 0.04, 0, w, d, 3);
   }
-  if (lv === 1) b.tree(-0.4, 0.4, 0.6).tree(0.4, 0.4, 0.6);
+  if (lv === 1) b.tree(-0.42, 0.42, 0.6).tree(0.42, 0.42, 0.6);
+  else for (const x of [-0.42, 0.42]) b.tree(x, 0.44, 0.5);
 }
 
 export function indBuilding(b, lv, r) {
@@ -231,21 +388,70 @@ export function indBuilding(b, lv, r) {
     b.add(GEO.cyl, 0xd9d3c7, x, 0, z, 0.1, h, 0.1).add(GEO.cyl, 0xc0392b, x, h - 0.12, z, 0.105, 0.06, 0.105);
     b.smoke.push([x, h + 0.05, z]);
   };
-  if (lv === 1) {
-    b.box(0, 0, -0.05, 0.8, 0.34, 0.56, wall).add(GEO.gable, roof, 0, 0.34, -0.05, 0.86, 0.18, 0.6);
-    b.box(0, 0, 0.23 + 0.002, 0.26, 0.24, 0.012, 0x6f7780);
-    chimney(0.3, -0.25, 0.85);
-  } else if (lv === 2) {
-    b.box(-0.08, 0, -0.08, 0.7, 0.42, 0.66, wall).add(GEO.gable, roof, -0.08, 0.42, -0.08, 0.74, 0.2, 0.7, Math.PI / 2);
-    b.add(GEO.cyl, 0xcfd4d8, 0.36, 0, 0.3, 0.22, 0.4, 0.22).add(GEO.cone, 0x9aa0a6, 0.36, 0.4, 0.3, 0.22, 0.08, 0.22);
-    chimney(0.33, -0.3, 1.05); chimney(0.15, -0.3, 0.9);
-  } else {
-    b.box(0, 0, -0.04, 0.9, 0.46, 0.8, wall);
-    for (let k = 0; k < 4; k++) b.add(GEO.gable, roof, -0.34 + k * 0.226, 0.46, -0.04, 0.22, 0.16, 0.82);
-    b.add(GEO.cyl, 0xcfd4d8, -0.34, 0, 0.38, 0.18, 0.55, 0.18).add(GEO.cyl, 0xcfd4d8, -0.13, 0, 0.38, 0.18, 0.55, 0.18);
-    chimney(0.34, 0.3, 1.3); chimney(0.34, -0.34, 1.15);
+  const container = (x, y, z, ry = 0) => b.add(GEO.box, pick(r, [0xd8342a, 0x2f5fb5, 0x4f9a5a, 0xe0a83a, 0x8d949b]), x, y, z, 0.1, 0.1, 0.24, ry);
+  const truck = (x, z) => { b.box(x, 0.02, z, 0.1, 0.12, 0.2, 0xf2efe6).box(x, 0.02, z + 0.14, 0.1, 0.09, 0.07, pick(r, [0xd8342a, 0x2f5fb5, 0x3b3f46])); };
+  if (lv === 1) { // workshop with roll-up doors and pallets
+    b.box(0, 0, -0.1, 0.8, 0.34, 0.5, wall).add(GEO.gable, roof, 0, 0.34, -0.1, 0.86, 0.16, 0.56);
+    for (const x of [-0.2, 0.15]) b.box(x, 0, 0.15 + 0.004, 0.22, 0.24, 0.012, 0x9aa0a6);
+    framedWindows(b, r, 0, -0.1, 0.8, 0.5, 0.06, 1, 0.3, 0.3, 0xe8e4dc, false);
+    for (let k = 0; k < 3; k++) b.box(-0.38 + k * 0.1, 0, 0.36, 0.08, 0.04 + (k % 2) * 0.04, 0.08, 0xb9864f);
+    chimney(0.32, -0.28, 0.8);
+    if (r() < 0.6) truck(0.3, 0.3);
+  } else if (lv === 2) { // warehouse with loading docks, containers and a silo
+    b.box(0, 0, -0.16, 0.9, 0.4, 0.52, wall).box(0, 0.4, -0.16, 0.92, 0.04, 0.54, roof);
+    for (const x of [-0.3, -0.1, 0.1, 0.3]) {
+      b.box(x, 0, 0.1 + 0.004, 0.14, 0.2, 0.012, 0x6f7780).box(x, 0.2, 0.13, 0.16, 0.015, 0.06, 0x3b3f46);
+    }
+    b.box(0, 0, 0.13, 0.9, 0.06, 0.05, CONCRETE);
+    truck(-0.3, 0.34); if (r() < 0.6) truck(0.1, 0.34);
+    container(0.38, 0, 0.32); container(0.38, 0.1, 0.32);
+    b.add(GEO.cyl, 0xcfd4d8, -0.36, 0.44, -0.3, 0.16, 0.3, 0.16).add(GEO.cone, 0x9aa0a6, -0.36, 0.74, -0.3, 0.17, 0.08, 0.17);
+    chimney(0.33, -0.34, 1.05);
+  } else { // factory with saw-tooth roof, cooling tower, tanks and pipes
+    b.box(-0.08, 0, -0.12, 0.76, 0.46, 0.66, wall);
+    for (let k = 0; k < 4; k++) {
+      const x = -0.37 + k * 0.19;
+      b.add(GEO.gable, roof, x, 0.46, -0.12, 0.19, 0.14, 0.68).box(x + 0.045, 0.5, -0.12, 0.006, 0.07, 0.6, 0x9fc6db, 1);
+    }
+    framedWindows(b, r, -0.08, -0.12, 0.76, 0.66, 0.08, 1, 0.34, 0.4, 0xe8e4dc, false);
+    b.add(GEO.frustum, 0xe9e4da, 0.36, 0, 0.3, 0.26, 0.7, 0.26);
+    b.smoke.push([0.36, 0.75, 0.3]);
+    for (const zz of [-0.36, -0.12]) b.add(GEO.cyl, 0xcfd4d8, 0.38, 0, zz, 0.16, 0.36, 0.16);
+    b.box(0.31, 0.3, -0.24, 0.16, 0.025, 0.025, METAL).box(0.33, 0.3, 0.06, 0.025, 0.025, 0.24, METAL);
+    chimney(-0.36, 0.34, 1.3); chimney(-0.2, 0.34, 1.15);
+    container(0.05, 0, 0.36, Math.PI / 2);
   }
 }
+
+// what is left after a fire: scorched lot, charred walls and rubble
+export function ruinSite(b, r) {
+  b.box(0, 0, 0, 0.98, 0.02, 0.98, 0x6b6258);
+  for (const [x, z, w, d, h] of [[-0.25, -0.2, 0.04, 0.5, 0.28], [0.1, -0.44, 0.6, 0.04, 0.2], [0.33, -0.1, 0.04, 0.3, 0.14]]) b.box(x, 0.02, z, w, h * (0.6 + r() * 0.6), d, 0x3b3633);
+  for (let k = 0; k < 9; k++) b.add(GEO.ico, pick(r, [0x4a4440, 0x5b5550, 0x2f2b28]), (r() - 0.5) * 0.6, 0.02, (r() - 0.5) * 0.6, 0.08 + r() * 0.08, 0.05, 0.08 + r() * 0.08, r() * 3);
+  for (const s of [-1, 1]) b.box(s * 0.47, 0, 0.1, 0.012, 0.07, 0.6, 0xe0a83a);
+}
+
+// a building under construction: fenced lot, rising frame, scaffolding and a crane for tall ones
+export function constructionSite(b, zone, lv, r, progress) {
+  b.box(0, 0, 0, 0.98, 0.02, 0.98, 0xa48a6a);
+  for (const s of [-1, 1]) { b.box(s * 0.47, 0, 0, 0.012, 0.09, 0.94, 0xe0a83a); b.box(0, 0, s * 0.47, 0.94, 0.09, 0.012, 0xe0a83a); }
+  const target = { res: [0, 0.4, 0.7, 1.4], com: [0, 0.42, 0.65, 0.8], off: [0, 0.75, 1.45, 2.6], ind: [0, 0.45, 0.5, 0.6] }[zone][lv];
+  const h = Math.max(0.06, target * clamp01(progress)), w = 0.66, d = 0.56;
+  b.box(0, 0.02, -0.04, w + 0.06, 0.04, d + 0.06, CONCRETE);
+  for (const [x, z] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2], [0, -d / 2], [0, d / 2]]) b.box(x, 0.06, z - 0.04, 0.035, h, 0.035, 0xb9b2a6);
+  for (let y = 0.26; y < h; y += 0.26) b.box(0, 0.06 + y, -0.04, w + 0.04, 0.025, d + 0.04, CONCRETE);
+  // scaffolding on the front
+  for (let x = -w / 2; x <= w / 2 + 1e-6; x += w / 4) b.box(x, 0.02, d / 2 + 0.02, 0.012, h + 0.05, 0.012, 0xe0a83a);
+  for (let y = 0.15; y < h; y += 0.15) b.box(0, 0.02 + y, d / 2 + 0.02, w, 0.012, 0.05, 0xb9864f);
+  b.box(-0.36, 0, 0.36, 0.12, 0.08, 0.1, 0x8d949b).box(0.3, 0, 0.36, 0.14, 0.05, 0.08, 0xd8d2c4);
+  if (target > 0.9) { // tower crane
+    const ch = target + 0.5;
+    b.box(0.4, 0, -0.38, 0.05, ch, 0.05, 0xf0c419);
+    b.box(0.16, ch, -0.38, 0.8, 0.035, 0.035, 0xf0c419).box(0.6, ch - 0.05, -0.38, 0.12, 0.08, 0.06, 0x6f7780);
+    b.box(-0.1, ch - 0.25, -0.38, 0.006, 0.25, 0.006, 0x3b3f46).box(-0.1, ch - 0.28, -0.38, 0.06, 0.03, 0.06, 0xd8342a);
+  }
+}
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 export function serviceBuilding(b, s, r) {
   switch (s) {

@@ -30,7 +30,7 @@
       <button data-speed="3" title="Muy rápido">⏭</button>
     </div>
     <div class="spacer"></div>
-    <div class="pill">
+    <div class="pill" id="resPill">
       <div class="stat" title="Electricidad: consumo / capacidad"><span class="ic">⚡</span><div><b id="sPower">0/0</b><small>luz</small></div></div>
       <div class="stat" title="Agua: consumo / capacidad"><span class="ic">💧</span><div><b id="sWater">0/0</b><small>agua</small></div></div>
       <div class="stat" title="Empleos ocupados / empleos"><span class="ic">💼</span><div><b id="sJobs">0/0</b><small>empleo</small></div></div>
@@ -42,12 +42,20 @@
   <nav class="card menu" id="menu">
     <a href="index.html">🏠 Volver al inicio</a>
     <a href="como-jugar.html">❓ Cómo jugar</a>
+    <button id="menuBudget">📊 Presupuesto</button>
+    <button id="menuPolitics">🗳️ Política y leyes</button>
+    <button id="menuCitizens">👥 Ciudadanos</button>
+    <button id="undoBtn">↶ Deshacer <small>(Ctrl+Z)</small></button>
+    <button id="exportCity">💾 Guardar partida en un archivo</button>
+    <button id="importCity">📂 Cargar partida de un archivo</button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
     <button id="renameCity">✏️ Cambiar nombre</button>
     <label class="menu-row">🎨 Estilo <select id="styleSel" aria-label="Estilo de ciudad"></select></label>
     <label class="menu-row">✨ Gráficos <select id="gfxSel" aria-label="Calidad gráfica"></select></label>
     <button id="newCity">🗑️ Nueva ciudad</button>
   </nav>
 
+  <div class="alerts" id="alerts" aria-live="polite"></div>
   <div class="ticker" aria-live="polite"><span class="tag" id="tickerTag">NOTICIAS</span><span id="tickerText">Bienvenida, alcaldesa o alcalde.</span></div>
 
   <aside class="card advisor" id="advisor">
