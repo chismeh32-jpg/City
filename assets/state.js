@@ -8,7 +8,7 @@ function newState() {
     name: 'Villanueva', style: 'clasico', money: 60000, minutes: 7 * 60, day: 1, approval: 62, speed: 1,
     taxes: { res: 12, com: 12, off: 12, ind: 12 },
     funding: Object.fromEntries(FUNDS.map(([k]) => [k, 100])),
-    party: null, laws: {}, nextElection: 1 + ELECTION_EVERY, terms: 0, history: [],
+    party: null, laws: {}, nextElection: 1 + ELECTION_EVERY, terms: 0, history: [], rank: null, stats: [],
     loan: null, weather: 'sun', tutorial: 0, tutorialHidden: false, budgetSeen: false, best: 0,
     tiles: Array.from({ length: N * N }, (_, i) => ({ t: 0, z: null, lv: 0, s: null, v: 0, tree: initialTree(i) })),
   };

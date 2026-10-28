@@ -65,11 +65,20 @@
     <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5zM8 4v5h7V4M8 20v-6h8v6"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="i-avenue" viewBox="0 0 24 24"><path d="M6 3L3 21M18 3l3 18M12 3v18M9 7v2M9 13v2M15 7v2M15 13v2"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/><path d="M3 17.5l9 5 9-5" opacity=".6"/></symbol>
+    <symbol id="i-stats" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M6 15l4-5 4 3 6-7"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.3"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2L12 17l-5.6 3 1.3-6.2L3 9.5l6.3-.7z"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
   </svg>
   <div id="view"></div>
 
   <header class="topbar">
-    <button class="pill brand" id="menuBtn" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-city"/></svg> <span id="cityName">Villanueva</span></button>
+    <button class="pill brand" id="menuBtn" aria-haspopup="true"><svg class="i" aria-hidden="true"><use href="#i-city"/></svg> <span id="cityName">Villanueva</span> <small class="rank" id="cityRank">Aldea</small></button>
     <div class="pill">
       <button class="stat" id="openCitizens" title="Ciudadanos"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-people"/></svg></span><div><b id="sPop">0</b><small>habitantes</small></div></button>
       <div class="stat"><span class="ic"><svg class="i" aria-hidden="true"><use href="#i-coins"/></svg></span><div><b id="sMoney">0 €</b><small id="sDelta">+0 al día</small></div></div>
@@ -98,6 +107,7 @@
     <button id="menuBudget"><svg class="i" aria-hidden="true"><use href="#i-chart"/></svg> Presupuesto</button>
     <button id="menuPolitics"><svg class="i" aria-hidden="true"><use href="#i-ballot"/></svg> Política y leyes</button>
     <button id="menuCitizens"><svg class="i" aria-hidden="true"><use href="#i-people"/></svg> Ciudadanos</button>
+    <button id="statsBtn"><svg class="i" aria-hidden="true"><use href="#i-stats"/></svg> Estadísticas <small>(G)</small></button>
     <button id="undoBtn"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg> Deshacer <small>(Ctrl+Z)</small></button>
     <button id="exportCity"><svg class="i" aria-hidden="true"><use href="#i-save"/></svg> Guardar partida en un archivo</button>
     <button id="importCity"><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg> Cargar partida de un archivo</button>
@@ -106,6 +116,10 @@
     <label class="menu-row"><svg class="i" aria-hidden="true"><use href="#i-palette"/></svg> Estilo <select id="styleSel" aria-label="Estilo de ciudad"></select></label>
     <label class="menu-row"><svg class="i" aria-hidden="true"><use href="#i-sparkle"/></svg> Gráficos <select id="gfxSel" aria-label="Calidad gráfica"></select></label>
     <label class="menu-row"><svg class="i" aria-hidden="true"><use href="#i-gauge"/></svg> Rendimiento <input type="checkbox" id="perfToggle"></label>
+    <label class="menu-row"><svg class="i" aria-hidden="true"><use href="#i-sound"/></svg> Sonido <input type="checkbox" id="soundToggle"></label>
+    <button id="photoBtn"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg> Modo foto <small>(H)</small></button>
+    <button id="snapBtn"><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg> Guardar captura <small>(P)</small></button>
+    <button id="helpBtn"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg> Atajos de teclado <small>(?)</small></button>
     <button id="newCity"><svg class="i" aria-hidden="true"><use href="#i-trash"/></svg> Nueva ciudad</button>
   </nav>
 
@@ -120,6 +134,13 @@
     <div class="row" id="advActions"></div>
   </aside>
 
+  <div class="card legend" id="legend" hidden></div>
+  <aside class="card inspector" id="inspector" hidden aria-live="polite">
+    <button class="close" id="inspClose" aria-label="Cerrar">✕</button>
+    <h3 id="inspTitle"></h3>
+    <div id="inspBody"></div>
+    <div class="row" id="inspActions"></div>
+  </aside>
   <div class="tooltip" id="tooltip"></div>
   <div class="perf" id="perf" hidden></div>
   <div class="card subtools" id="subtools"></div>
@@ -222,6 +243,32 @@
       </div>
       <h3><svg class="i" aria-hidden="true"><use href="#i-people"/></svg> Qué dicen los vecinos</h3>
       <ul class="rows" id="ctQuotes"></ul>
+    </div>
+  </div>
+
+  <div class="modal" id="rankModal" role="dialog" aria-modal="true" aria-labelledby="rankTitle">
+    <div class="card rank-card">
+      <div class="confetti" aria-hidden="true"></div>
+      <h2 id="rankTitle"></h2>
+      <div id="rankBody"></div>
+      <div class="row-actions"><button class="btn primary" id="rankOk">¡A seguir creciendo!</button></div>
+    </div>
+  </div>
+
+  <div class="modal wide" id="statsModal" role="dialog" aria-modal="true" aria-labelledby="stTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="stTitle"><svg class="i" aria-hidden="true"><use href="#i-stats"/></svg> Estadísticas</h2>
+      <div id="statsBody"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="helpModal" role="dialog" aria-modal="true" aria-labelledby="hpTitle">
+    <div class="card">
+      <button class="x" data-close aria-label="Cerrar">✕</button>
+      <h2 id="hpTitle"><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg> Atajos de teclado</h2>
+      <ul class="keys"><li><kbd>1 … 7</kbd><span>Categorías de herramientas</span></li><li><kbd>Q / E</kbd><span>Girar la cámara</span></li><li><kbd>Flechas</kbd><span>Mover la cámara</span></li><li><kbd>Rueda</kbd><span>Zoom</span></li><li><kbd>Espacio</kbd><span>Pausa / continuar</span></li><li><kbd>Ctrl + Z</kbd><span>Deshacer</span></li><li><kbd>L</kbd><span>Mostrar capas de información</span></li><li><kbd>H</kbd><span>Modo foto (oculta la interfaz)</span></li><li><kbd>P</kbd><span>Guardar una captura en PNG</span></li><li><kbd>M</kbd><span>Activar o silenciar el sonido</span></li><li><kbd>G</kbd><span>Estadísticas</span></li><li><kbd>?</kbd><span>Esta ayuda</span></li><li><kbd>Esc</kbd><span>Cerrar paneles / soltar herramienta</span></li></ul>
+      <p class="note">Consejo: con la herramienta <b>Mirar</b> haz clic en cualquier casilla para ver quién vive allí y qué le falta para crecer.</p>
     </div>
   </div>
 

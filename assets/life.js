@@ -6,6 +6,7 @@ import { S, load } from './state.js';
 import { controls, renderer, scene } from './scene.js';
 import { chunks, isBusStop, isRoad, refreshTile, smokeEmitters } from './world.js';
 import { D, law, radiusOf } from './sim.js';
+import { sfx } from './audio.js';
 
 /* ---------------------------------------------------------------- living details */
 /* ---------------------------------------------------------------- traffic: cars, buses, vans, trucks, emergency vehicles */
@@ -150,7 +151,8 @@ function routeBetween(from, to) {
     if (cur === to) break;
     if (dcur > dist.get(cur)) continue;
     for (const n of roadNeighbours(cur)) {
-      const nd = dcur + 1 + roadLoad[n] * 0.6;
+      const av = S.tiles[n].av ? 0.5 : 1; // avenues carry twice the traffic and are preferred
+      const nd = dcur + 1 + roadLoad[n] * 0.6 * av - (av < 1 ? 0.15 : 0);
       if (nd < (dist.get(n) ?? Infinity)) { dist.set(n, nd); prev.set(n, cur); push([nd, n]); }
     }
   }
@@ -186,10 +188,10 @@ function stationOf(role) {
 // share of road tiles that are jammed (smoothed), used by the approval index and tooltips
 function congestion() {
   let busy = 0, used = 0;
-  for (const i of roadTiles()) { if (roadLoad[i] > 0.3) used++; if (roadLoad[i] > 2.6) busy++; }
+  for (const i of roadTiles()) { if (roadLoad[i] > 0.3) used++; if (roadLoad[i] > (S.tiles[i].av ? 5.2 : 2.6)) busy++; }
   return used > 8 ? busy / used : 0;
 }
-const trafficLabel = (i) => (roadLoad[i] > 2.6 ? '<span class="bad">atasco</span>' : roadLoad[i] > 1.2 ? 'denso' : 'fluido');
+const trafficLabel = (i) => { const l = roadLoad[i] / (S.tiles[i].av ? 2 : 1); return l > 2.6 ? '<span class="bad">atasco</span>' : l > 1.2 ? 'denso' : 'fluido'; };
 
 function updateTraffic(dt) {
   if (!D) return;
@@ -224,7 +226,7 @@ function updateTraffic(dt) {
     const a = agents[n], R = ROLES[a.role];
     if (S.tiles[a.from].t !== 'road' || S.tiles[a.to].t !== 'road') { agents.splice(n, 1); continue; }
     const dx = (a.to % N) - (a.from % N);
-    let step = dt * a.v * k * (a.target >= 0 && a.path ? 1.6 : 1);
+    let step = dt * a.v * k * (a.target >= 0 && a.path ? 1.6 : 1) * (S.tiles[a.from].av && S.tiles[a.to].av ? 1.25 : 1);
     if (a.wait > 0) { a.wait -= dt * k; step = 0; }
     // stop at red lights before junctions (emergency vehicles on call ignore them)
     const red = isJunction(a.to) && (dx !== 0) !== greenX && !(R.siren && a.alarm);
@@ -488,6 +490,7 @@ function startFire(i, covered) {
   T.fire = FIRE_HOURS; T.saved = false;
   fireDirty = true;
   const names = { res: 'una vivienda', com: 'un comercio', off: 'unas oficinas', ind: 'una fábrica' };
+  sfx('siren');
   news(`🔥 Incendio en ${names[T.z]}${covered ? '. Los bomberos ya van de camino.' : ' y no hay bomberos cerca.'}`, 'SUCESOS');
   if (!covered) return;
   const goal = nearestRoad(x, z);

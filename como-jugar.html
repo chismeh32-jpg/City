@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cómo jugar — Urbania</title>
-  <meta name="description" content="Tus primeros cinco minutos en Urbania.">
+  <meta name="description" content="Tus primeros cinco minutos en Urbania: calles, zonas, servicios, leyes, rangos, capas de información y controles.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/style.css">
@@ -20,19 +20,44 @@
       <article class="card step"><span class="time">0:00</span><h3>Traza la primera calle</h3><p>Abre <b>Calles</b> en la barra de abajo y arrastra sobre el terreno. Si cruzas el río se construye un puente.</p></article>
       <article class="card step"><span class="time">0:30</span><h3>Marca zonas de vivienda</h3><p>En <b>Zonas</b> elige <b>Vivienda</b> y arrastra un rectángulo junto a la calle. Los edificios crecen solos en casillas a dos o menos de una calle.</p></article>
       <article class="card step"><span class="time">1:00</span><h3>Luz y agua</h3><p>Nadie se muda sin servicios básicos. Coloca una <b>central eléctrica</b> y una <b>torre de agua</b>. Cada edificio nuevo reserva su luz y su agua antes de empezar las obras: cuando la red se queda corta aparece un aviso rojo, y al pulsarlo te lleva a construir más.</p></article>
-      <article class="card step"><span class="time">2:00</span><h3>Crea empleo</h3><p>Marca <b>Comercio</b> e <b>Industria</b>. Más adelante, con 120 vecinos, también <b>Oficinas</b>. Pon la industria lejos de las casas: su humo baja la aprobación.</p></article>
-      <article class="card step"><span class="time">3:00</span><h3>Cuida a los vecinos</h3><p>Salud, escuela, policía, bomberos y parques suben la <b>aprobación</b>, pero solo para las casas que quedan dentro de su radio. Con aprobación alta los edificios suben de nivel.</p></article>
-      <article class="card step"><span class="time">3:30</span><h3>Elige partido y aprueba leyes</h3><p>Construye el <b>Ayuntamiento</b> (en Servicios) y abre <b>🗳️ Política</b>. Las leyes de tu partido gustan a tus votantes; las del contrario, no. Cada 10 días hay elecciones y necesitas el 50 % de los votos.</p></article>
-      <article class="card step"><span class="time">4:00</span><h3>Cuadra el presupuesto</h3><p>En <b>📊 Presupuesto</b> ajusta la tasa de cada zona (por encima del 14 % la gente se enfada) y los fondos de cada servicio. Si vas justo, pide un préstamo.</p></article>
-      <article class="card step"><span class="time">5:00</span><h3>Acelera y disfruta</h3><p>Construye una <b>estación de autobuses</b> para que haya líneas de bus y menos coches, pon una plaza, un zoológico o un estadio para atraer turistas, pulsa 👥 para ver qué opinan los vecinos, usa ⏩ para acelerar el tiempo, cambia el estilo de tu ciudad en el menú 🏙️ y mira cómo cae la noche sobre tus calles.</p></article>
+      <article class="card step"><span class="time">2:00</span><h3>Crea empleo</h3><p>Marca <b>Comercio</b> e <b>Industria</b>. Cuando tu pueblo sea <b>villa</b> (300 habitantes) podrás marcar también <b>Oficinas</b>. Pon la industria lejos de las casas: su humo baja la aprobación.</p></article>
+      <article class="card step"><span class="time">3:00</span><h3>Cuida a los vecinos</h3><p>Salud, escuela, policía, bomberos y parques suben la <b>aprobación</b>, pero solo para las casas que quedan dentro de su radio: al elegir uno verás un círculo con su alcance y el mapa se colorea con la cobertura actual. Con aprobación alta y buen <b>valor del suelo</b> los edificios suben de nivel.</p></article>
+      <article class="card step"><span class="time">3:30</span><h3>Elige partido y aprueba leyes</h3><p>Al llegar a 100 habitantes tu aldea pasa a <b>pueblo</b>: construye el <b>Ayuntamiento</b> (en Servicios) y abre <b><svg class="i" aria-hidden="true"><use href="#i-ballot"/></svg> Política</b> (arriba a la derecha). Las leyes de tu partido gustan a tus votantes; las del contrario, no. Cada 10 días hay elecciones y necesitas el 50 % de los votos.</p></article>
+      <article class="card step"><span class="time">4:00</span><h3>Cuadra el presupuesto</h3><p>En <b><svg class="i" aria-hidden="true"><use href="#i-chart"/></svg> Presupuesto</b> ajusta la tasa de cada zona (por encima del 14 % la gente se enfada) y los fondos de cada servicio. Si vas justo, pide un préstamo.</p></article>
+      <article class="card step"><span class="time">5:00</span><h3>Acelera y disfruta</h3><p>Construye una <b>estación de autobuses</b> para que haya líneas de bus y menos coches, pon una plaza, un zoológico o un estadio para atraer turistas, pulsa <svg class="i" aria-hidden="true"><use href="#i-people"/></svg> (habitantes) para ver qué opinan los vecinos, usa <svg class="i" aria-hidden="true"><use href="#i-fast"/></svg> para acelerar el tiempo, cambia el estilo de tu ciudad en el menú <svg class="i" aria-hidden="true"><use href="#i-city"/></svg> y mira cómo cae la noche sobre tus calles.</p></article>
     </div>
+
+    <section>
+      <h2>Sube de rango</h2>
+      <p class="muted">Tu ciudad empieza siendo una aldea. Al crecer sube de categoría: hay fiesta, el Estado te premia con dinero y se desbloquean edificios nuevos (en el juego aparecen con un candado hasta entonces).</p>
+      <ol class="ranks">
+        <li><b>Aldea</b><small>desde el principio</small><p>Calles, viviendas, comercio, industria, luz, agua y servicios básicos.</p></li>
+        <li><b>Pueblo</b><small>100 habitantes · +5.000 €</small><p>Ayuntamiento, plaza mayor, estación de autobuses y parque solar.</p></li>
+        <li><b>Villa</b><small>300 habitantes · +10.000 €</small><p>Oficinas, museo, aerogeneradores y avenidas.</p></li>
+        <li><b>Ciudad</b><small>700 habitantes · +20.000 €</small><p>Zoológico.</p></li>
+        <li><b>Gran ciudad</b><small>1.500 habitantes · +40.000 €</small><p>Estadio.</p></li>
+        <li><b>Metrópolis</b><small>3.000 habitantes · +80.000 €</small><p>Lo más alto. ¡Enhorabuena, alcaldía!</p></li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Lee tu ciudad</h2>
+      <div class="grid grid-3">
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-layers"/></svg> Capas</h3><p>Pulsa <b>Capas</b> en la barra (o <kbd>L</kbd>) para colorear el mapa: verde es bueno y rojo, malo. Hay capas de valor del suelo, contaminación, tráfico y alcance de cada servicio.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-coins"/></svg> Valor del suelo</h3><p>Sube con parques, árboles, el río, el ocio y los servicios; baja con el humo de fábricas y centrales y con los atascos. Las casas grandes y las torres solo crecen donde el suelo vale.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-info"/></svg> Inspector</h3><p>Con <svg class="i" aria-hidden="true"><use href="#i-hand"/></svg> Mirar, haz clic en cualquier casilla: verás quién vive o trabaja allí, qué servicios tiene cerca y una lista de lo que le falta para subir de nivel.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-avenue"/></svg> Avenidas</h3><p>Si una calle se atasca, conviértela en avenida (desde villa): dos carriles por sentido, mediana con árboles y más capacidad. Los coches eligen las rutas más rápidas.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-stats"/></svg> Estadísticas</h3><p>En el menú (o con <kbd>G</kbd>) tienes gráficas día a día de población, dinero, aprobación, paro, contaminación y atascos.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-camera"/></svg> Modo foto y sonido</h3><p><kbd>H</kbd> esconde la interfaz, <kbd>P</kbd> guarda una captura y <kbd>M</kbd> activa o silencia el sonido de la ciudad.</p></div>
+      </div>
+    </section>
 
     <section>
       <h2>Controles</h2>
       <div class="grid grid-3">
-        <div class="card"><h3>🖱️ Ratón</h3><p><b>Izquierdo</b>: construir (o mover el mapa con 🖐️ Mirar). <b>Derecho</b> y arrastrar: girar. <b>Rueda</b>: zoom. <b>Botón central</b>: mover el mapa.</p></div>
-        <div class="card"><h3>⌨️ Teclado</h3><p><kbd>1</kbd>–<kbd>7</kbd> herramientas · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer · <kbd>Espacio</kbd> pausa · <kbd>Q</kbd> <kbd>E</kbd> girar · flechas para mover · <kbd>Esc</kbd> soltar herramienta.</p></div>
-        <div class="card"><h3>📱 Táctil</h3><p>Con 🖐️ Mirar, un dedo mueve el mapa. Con una herramienta, un dedo construye. Dos dedos giran y hacen zoom.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-mouse"/></svg> Ratón</h3><p><b>Izquierdo</b>: construir. Con <svg class="i" aria-hidden="true"><use href="#i-hand"/></svg> Mirar, un clic inspecciona un edificio y arrastrar mueve el mapa. <b>Derecho</b> y arrastrar: girar. <b>Rueda</b>: zoom. <b>Botón central</b>: mover el mapa.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-keyboard"/></svg> Teclado</h3><p><kbd>1</kbd>–<kbd>7</kbd> herramientas · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer · <kbd>Espacio</kbd> pausa · <kbd>Q</kbd> <kbd>E</kbd> girar · flechas para mover · <kbd>L</kbd> capas · <kbd>G</kbd> estadísticas · <kbd>H</kbd> modo foto · <kbd>P</kbd> captura · <kbd>M</kbd> sonido · <kbd>?</kbd> ayuda · <kbd>Esc</kbd> soltar herramienta.</p></div>
+        <div class="card"><h3><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg> Táctil</h3><p>Con <svg class="i" aria-hidden="true"><use href="#i-hand"/></svg> Mirar, un dedo mueve el mapa. Con una herramienta, un dedo construye. Dos dedos giran y hacen zoom.</p></div>
       </div>
       <p style="margin-top:32px"><a class="btn btn-primary" href="jugar.html">▶ Probar ahora</a></p>
     </section>

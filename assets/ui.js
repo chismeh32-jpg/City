@@ -1,11 +1,14 @@
 // Urbania — the interface: news, tutorial, tools and input, HUD, panels, politics, citizens and menu.
 import * as THREE from 'three';
 import { rng, pick, STYLES, setStyle } from './buildings.js';
-import { $, CATEGORIES, ELECTION_EVERY, FUNDS, HALF, I, LAWS, LAW_BY_ID, LAW_FEE, N, NAMES, PARTIES, SERVICES, W, WATER, ZONES, _m, clamp, el, fmt, ic, inside, money, news, signed } from './config.js';
+import { $, CATEGORIES, ELECTION_EVERY, FUNDS, HALF, I, LAWS, LAW_BY_ID, LAW_FEE, N, NAMES, PARTIES, RANKS, SERVICES, UNLOCK, W, WATER, ZONES, _m, clamp, el, fmt, ic, inside, money, news, signed } from './config.js';
 import { S, fromSave, newState, save, setState } from './state.js';
 import { GFX_KEY, GFX_LEVELS, applyGfx, camera, controls, gfx, perfVisible, renderer, scene, setPerfVisible } from './scene.js';
 import { chunks, cursor, dirtyChunks, rebuildAll, refreshAround, refreshTile } from './world.js';
-import { D, buildCost, law, nearRoad, party, radiusOf, refresh, upkeepOf } from './sim.js';
+import { D, buildCost, isLocked, law, nearRoad, party, radiusOf, refresh, upkeepOf } from './sim.js';
+import { sfx } from './audio.js';
+import { LAYERS, currentLayer, restoreLayer, setLayer, showRange } from './layers.js';
+import { bar, closeInspector, inspect, renderInspector, renderStats, takePhoto, togglePhotoMode, toggleSound } from './panels.js';
 import { agents, markFires, trafficLabel, walkers } from './life.js';
 
 /* ---------------------------------------------------------------- news ticker */
@@ -38,7 +41,7 @@ const STEPS = [
   { title: 'Luz y agua', text: 'Las casas no crecen sin servicios básicos. Coloca una central eléctrica y una torre de agua cerca de una calle.', done: (d) => d.powerCap > 0 && d.waterCap > 0, tool: 'power' },
   { title: 'Crea empleo', text: 'Marca zonas de Comercio e Industria. Pon la industria lejos de las casas: su humo molesta.', done: (d) => d.zoneTiles.com + d.zoneTiles.ind >= 6, tool: 'com' },
   { title: 'Cuida a los vecinos', text: 'Un centro de salud y una escuela cerca de las casas suben mucho la aprobación.', done: (d) => d.svc.health && d.svc.school, tool: 'health' },
-  { title: 'Construye el ayuntamiento', text: 'Está en "Servicios". Desde él podrás aprobar leyes en Política (arriba a la derecha).', done: (d) => d.svc.cityhall, tool: 'cityhall' },
+  { title: 'Construye el ayuntamiento', text: 'Se desbloquea al llegar a 100 habitantes (rango Pueblo) y está en "Servicios". Desde él podrás aprobar leyes en Política (arriba a la derecha).', done: (d) => d.svc.cityhall, tool: 'cityhall' },
   { title: 'Aprueba tu primera ley', text: 'Abre Política (arriba a la derecha) y aprueba una ley. Las que encajan con tu partido gustan a tus votantes.', done: () => LAWS.some((l) => law(l.id)), action: () => openModal('politicsModal') },
   { title: 'Revisa el presupuesto', text: 'Ajusta impuestos y fondos en Presupuesto (arriba a la derecha). Más impuestos, más dinero, pero menos crecimiento.', done: () => S.budgetSeen, action: () => openModal('budgetModal') },
   { title: '¡Tu ciudad está en marcha!', text: `Cada ${ELECTION_EVERY} días hay elecciones: vigila la aprobación y la intención de voto. Añade ocio (zoológico, estadio, museo) para atraer turistas.` },
@@ -76,18 +79,35 @@ function renderToolbar() {
     b.onclick = () => selectTool(tool.cat === c.id && c.id !== 'look' ? 'look' : c.tools[0].id);
     bar.append(b);
   });
+  const lb = el('button', 'tb', `<span class="ic">${ic('layers')}</span>Capas`);
+  lb.title = 'Capas de información (L)';
+  lb.setAttribute('aria-pressed', layerPanel);
+  lb.onclick = () => { layerPanel = !layerPanel; sfx('click'); if (tool.id !== 'look') selectTool('look'); else renderToolbar(); };
+  bar.append(lb);
   const ub = el('button', 'tb', `<span class="ic">${ic('undo')}</span>Deshacer`);
   ub.title = 'Deshacer lo último que has construido hoy (Ctrl+Z)';
   ub.onclick = undo;
   bar.append(ub);
   const sub = $('subtools'), cat = CATEGORIES.find((c) => c.id === tool.cat);
   sub.innerHTML = '';
-  sub.classList.toggle('open', cat.id !== 'look');
-  if (cat.id === 'look') return;
+  sub.classList.toggle('open', cat.id !== 'look' || layerPanel);
+  sub.classList.toggle('layers', cat.id === 'look');
+  if (cat.id === 'look') {
+    if (!layerPanel) return;
+    for (const [id, L] of [[null, { label: 'Sin capa', ico: 'hand' }], ...Object.entries(LAYERS)]) {
+      const b = el('button', 'st', `<span class="ic">${ic(L.ico)}</span><span>${L.short || L.label}</span>`);
+      b.title = L.label;
+      b.setAttribute('aria-pressed', currentLayer() === id);
+      b.onclick = () => { setLayer(id); sfx('click'); renderToolbar(); };
+      sub.append(b);
+    }
+    return;
+  }
   for (const t of cat.tools) {
-    const b = el('button', 'st', `<span class="ic">${ic(t.ico)}</span><span>${t.label}<small>${t.mode === 'one' ? money(buildCost(t)) : `${money(t.cost)} / casilla`}</small></span>`);
+    const locked = isLocked(unlockKey(t));
+    const b = el('button', 'st' + (locked ? ' locked' : ''), `<span class="ic">${ic(locked ? 'lock' : t.ico)}</span><span>${t.label}<small>${locked ? `${RANKS[UNLOCK[unlockKey(t)]][1]}: ${fmt(RANKS[UNLOCK[unlockKey(t)]][0])} hab.` : t.mode === 'one' ? money(buildCost(t)) : `${money(t.cost)} / casilla`}</small></span>`);
     b.setAttribute('aria-pressed', tool.id === t.id);
-    b.title = t.hint || '';
+    b.title = locked ? lockText(t) : t.hint || '';
     b.onclick = () => selectTool(t.id);
     sub.append(b);
   }
@@ -101,8 +121,15 @@ function renderToolbar() {
     sub.append(dem);
   }
 }
+let layerPanel = false;
 function selectTool(id) {
   tool = TOOL_BY_ID[id];
+  if (id !== 'look') layerPanel = false;
+  // placing a service shows where it would reach; other tools bring back the player's layer
+  const def = tool.svc && SERVICES[tool.svc];
+  if (def && def.radius) setLayer(def.leisure ? 'cov:leisure' : `cov:${tool.svc}`, true);
+  else restoreLayer();
+  showRange(0, 0, 0);
   controls.mouseButtons.LEFT = tool.id === 'look' ? THREE.MOUSE.PAN : -1;
   controls.touches.ONE = tool.id === 'look' ? THREE.TOUCH.PAN : -1;
   scene.userData.grid.material.opacity = tool.id === 'look' ? 0.06 : 0.16;
@@ -140,9 +167,21 @@ function pathTiles(a, b, mode) {
 }
 
 // returns { ok, cost } for applying the current tool at tile i
+// key used for unlocks: service id, zone id or tool id
+const unlockKey = (t) => t.svc || t.zone || t.id;
+function lockText(t) {
+  const r = UNLOCK[unlockKey(t)] || 0;
+  return `Se desbloquea al ser ${RANKS[r][1].toLowerCase()} (${fmt(RANKS[r][0])} habitantes)`;
+}
 function evaluate(i) {
   const T = S.tiles[i], treeCost = T.tree && !T.t ? 5 : 0;
+  if (isLocked(unlockKey(tool))) return { ok: false, why: lockText(tool) };
   switch (tool.id) {
+    case 'avenue':
+      if (T.t === 'road' && T.av) return { ok: true, cost: 0, skip: true };
+      if (T.t === 'svc') return { ok: false, why: 'Hay un edificio' };
+      if (T.t === 'road') return { ok: true, cost: WATER[i] ? 80 : 40 };
+      return { ok: true, cost: (WATER[i] ? 150 : 60) + treeCost };
     case 'road':
       if (T.t === 'road') return { ok: true, cost: 0, skip: true };
       if (T.t === 'svc') return { ok: false, why: 'Hay un edificio' };
@@ -176,10 +215,11 @@ function apply(list) {
   undoStack.push({ money: S.money, day: S.day, tiles: evals.map(([i]) => [i, { ...S.tiles[i] }]) });
   if (undoStack.length > 30) undoStack.shift();
   S.money -= cost;
-  const touched = new Set(), clear = { lv: 0, prev: 0, build: 0, fire: 0, saved: false, ruin: 0 };
+  const touched = new Set(), clear = { lv: 0, prev: 0, build: 0, fire: 0, saved: false, ruin: 0, av: 0 };
   for (const [i] of evals) {
     const T = S.tiles[i];
     if (tool.id === 'road') Object.assign(T, clear, { t: 'road', z: null, s: null, tree: false });
+    else if (tool.id === 'avenue') Object.assign(T, clear, { t: 'road', av: 1, z: null, s: null, tree: false });
     else if (tool.id === 'trees') T.tree = true;
     else if (tool.id === 'bulldoze') Object.assign(T, clear, { t: 0, z: null, s: null, tree: false });
     else if (tool.zone) Object.assign(T, clear, { t: 'zone', z: tool.zone, s: null, tree: false });
@@ -187,6 +227,7 @@ function apply(list) {
     touched.add(i);
   }
   markFires();
+  sfx(tool.id === 'bulldoze' ? 'demolish' : tool.zone || tool.id === 'trees' ? 'zone' : tool.id === 'road' || tool.id === 'avenue' ? 'road' : 'build');
   for (const i of touched) refreshAround(i);
   for (const i of touched) if (S.tiles[i].t === 'svc') refreshTile(i, true);
   refresh();
@@ -211,7 +252,9 @@ function undo() {
 
 let drag = null, hoverTile = null;
 const tip = $('tooltip');
+let press = null; // where a left click started in look mode, to tell clicks from drags
 renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button === 0 && tool.id === 'look') press = { x: e.clientX, y: e.clientY, t: performance.now() };
   if (e.button !== 0 || tool.id === 'look') return;
   const t = tileAt(e);
   if (!t) return;
@@ -225,18 +268,25 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   updateCursor(e);
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
+  if (press && tool.id === 'look' && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6 && performance.now() - press.t < 400) {
+    const t = tileAt(e);
+    if (t) inspect(I(...t)); else closeInspector();
+  }
+  press = null;
   if (!drag) return;
   apply(pathTiles(drag.a, drag.b, tool.mode));
   drag = null;
   updateCursor(e);
 });
-renderer.domElement.addEventListener('pointerleave', () => { tip.style.display = 'none'; if (!drag) cursor.count = 0; });
+renderer.domElement.addEventListener('pointerleave', () => { tip.style.display = 'none'; showRange(0, 0, 0); if (!drag) cursor.count = 0; });
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const OK = new THREE.Color(0x4fb86a), BAD = new THREE.Color(0xd8452f), NEUTRAL = new THREE.Color(0xb8b2a6);
 function updateCursor(e) {
   const t = drag ? drag.b : hoverTile;
-  if (!t) { cursor.count = 0; tip.style.display = 'none'; return; }
+  if (!t) { cursor.count = 0; tip.style.display = 'none'; showRange(0, 0, 0); return; }
+  const def = tool.svc && SERVICES[tool.svc];
+  showRange(t[0], t[1], def && def.radius ? radiusOf(tool.svc) : 0);
   const list = tool.id === 'look' ? [I(...t)] : pathTiles(drag ? drag.a : t, t, tool.mode);
   let cost = 0, bad = '', warn = '';
   cursor.count = list.length;
@@ -300,9 +350,15 @@ addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(); }
   const n = Number(e.key);
   if (n >= 1 && n <= CATEGORIES.length) selectTool(CATEGORIES[n - 1].tools[0].id);
-  else if (e.key === 'Escape') { if (document.querySelector('.modal.open')) closeModals(); else selectTool('look'); }
+  else if (e.key === 'Escape') { if (document.querySelector('.modal.open')) closeModals(); else if (document.body.classList.contains('photo')) togglePhotoMode(); else { closeInspector(); selectTool('look'); } }
   else if (e.code === 'Space') { e.preventDefault(); setSpeed(S.speed ? 0 : lastSpeed); }
   else if (e.key === 'q' || e.key === 'e') rotateCamera(e.key === 'q' ? 1 : -1);
+  else if (e.key === 'l' || e.key === 'L') { layerPanel = !layerPanel; if (tool.id !== 'look') selectTool('look'); else renderToolbar(); }
+  else if (e.key === 'h' || e.key === 'H') togglePhotoMode();
+  else if (e.key === 'p' || e.key === 'P') takePhoto();
+  else if (e.key === 'm' || e.key === 'M') toggleSound();
+  else if (e.key === 'g' || e.key === 'G') openModal('statsModal');
+  else if (e.key === '?') openModal('helpModal');
 });
 function rotateCamera(dir) {
   const off = camera.position.clone().sub(controls.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), dir * Math.PI / 8);
@@ -322,6 +378,7 @@ function updateHud() {
   if (!D) return;
   const h = Math.floor(S.minutes / 60), m = Math.floor(S.minutes % 60);
   $('cityName').textContent = S.name;
+  $('cityRank').textContent = RANKS[S.rank ?? 0][1];
   $('sPop').textContent = fmt(D.pop);
   $('sMoney').textContent = money(S.money);
   $('sMoney').style.color = S.money < 0 ? 'var(--accent)' : '';
@@ -337,6 +394,7 @@ function updateHud() {
   if ($('approvalModal').classList.contains('open')) renderApproval();
   if ($('budgetModal').classList.contains('open')) renderBudgetNumbers();
   renderAlerts();
+  renderInspector();
   placeTicker();
   const days = S.nextElection - S.day;
   $('sVote').textContent = `${D.vote} % voto`;
@@ -356,6 +414,8 @@ function renderAlerts() {
   if (S.money < 0) out.push(['trend', 'Números rojos: revisa el presupuesto', 'budget']);
   const key = out.map((a) => a[1]).join('|');
   if (key === renderAlerts.key) return;
+  if (out.length > (renderAlerts.n ?? out.length)) sfx('alert');
+  renderAlerts.n = out.length;
   renderAlerts.key = key;
   $('alerts').innerHTML = out.map(([name, text, fix]) => `<button class="alert" data-fix="${fix}">${ic(name)} ${text} <b>Arreglar →</b></button>`).join('');
 }
@@ -374,6 +434,7 @@ function openModal(id) {
   if (id === 'politicsModal') renderPolitics();
   if (id === 'partyModal') renderParties();
   if (id === 'citizensModal') renderCitizens();
+  if (id === 'statsModal') renderStats();
 }
 function closeModals() { document.querySelectorAll('.modal.open').forEach((m) => m.classList.remove('open')); }
 document.querySelectorAll('.modal').forEach((m) => m.addEventListener('click', (e) => { if (e.target === m || e.target.closest('[data-close]')) closeModals(); }));
@@ -498,7 +559,7 @@ $('lawList').addEventListener('click', (e) => {
   if (law(l.id)) { delete S.laws[l.id]; news(`El pleno deroga la ley: ${l.name.toLowerCase()}.`, 'POLÍTICA'); }
   else {
     if (!D.svc.cityhall || S.money < LAW_FEE) return;
-    S.money -= LAW_FEE; S.laws[l.id] = S.day;
+    S.money -= LAW_FEE; S.laws[l.id] = S.day; sfx('law');
     news(`El pleno aprueba: ${l.name.toLowerCase()}.`, 'POLÍTICA');
   }
   refresh(); checkTutorial(D); renderPolitics(); updateHud(); save();
@@ -506,6 +567,7 @@ $('lawList').addEventListener('click', (e) => {
 $('polChangeParty').onclick = () => openModal('partyModal');
 
 function showElection(r) {
+  sfx(r.won ? 'win' : 'lose');
   const rows = [[S.party || 'centro', r.mine, true], ...r.rivals.map(([k, v]) => [k, v, false])].sort((a, b) => b[1] - a[1]);
   $('elTitle').textContent = r.won ? '🏆 ¡Has ganado las elecciones!' : '❌ Has perdido las elecciones';
   $('elText').textContent = r.won
@@ -600,6 +662,7 @@ $('styleSel').onchange = (e) => {
 };
 function newCity(skipConfirm = false) {
   if (!skipConfirm && !confirm('¿Empezar una ciudad nueva? Se perderá la actual.')) return;
+  closeInspector();
   setState(newState());
   setStyle(S.style);
   $('styleSel').value = S.style;
@@ -627,10 +690,11 @@ $('importFile').onchange = async (e) => {
   let next = null;
   try { next = fromSave(JSON.parse(await file.text())); } catch { /* not JSON */ }
   if (!next) return news('Ese archivo no es una partida de Urbania.', 'AVISO');
+  closeInspector();
   setState(next); setStyle(S.style); $('styleSel').value = S.style;
   undoStack.length = 0; agents.length = 0; walkers.length = 0;
   rebuildAll(); refresh(); markFires(); setSpeed(S.speed || 1); renderAdvisor(); updateHud(); save();
   news(`Partida cargada: ${S.name}, día ${S.day}.`, 'AJUSTES');
 };
 
-export { lastWarn, hourlyNews, STEPS, renderAdvisor, checkTutorial, TOOL_BY_ID, tool, renderToolbar, selectTool, raycaster, ndc, groundPlane, tileAt, pathTiles, evaluate, apply, undoStack, undo, drag, hoverTile, tip, OK, BAD, NEUTRAL, updateCursor, describe, placeTicker, lastSpeed, rotateCamera, setSpeed, partOfDay, updateHud, renderAlerts, openModal, closeModals, renderApproval, renderBudget, renderBudgetNumbers, LEAN_LABEL, renderParties, renderPolitics, showElection, citizenQuotes, renderCitizens, newCity };
+export { lastWarn, hourlyNews, STEPS, renderAdvisor, checkTutorial, TOOL_BY_ID, tool, renderToolbar, layerPanel, selectTool, raycaster, ndc, groundPlane, tileAt, pathTiles, unlockKey, lockText, evaluate, apply, undoStack, undo, drag, hoverTile, tip, press, OK, BAD, NEUTRAL, updateCursor, describe, placeTicker, lastSpeed, rotateCamera, setSpeed, partOfDay, updateHud, renderAlerts, openModal, closeModals, renderApproval, renderBudget, renderBudgetNumbers, LEAN_LABEL, renderParties, renderPolitics, showElection, citizenQuotes, renderCitizens, newCity };

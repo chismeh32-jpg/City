@@ -1,10 +1,11 @@
 // Urbania — the city simulation: stats, budget, approval, votes, growth, construction, days and elections.
 import { pick } from './buildings.js';
-import { ELECTION_EVERY, FUNDS, LAWS, N, NEIGHBOURS, PARTIES, SERVICES, ZONES, clamp, ic, news } from './config.js';
+import { ELECTION_EVERY, FUNDS, I, LAWS, N, NEIGHBOURS, PARTIES, RANKS, RANK_REWARD, SERVICES, UNLOCK, WATER, ZONES, clamp, ic, inside, news } from './config.js';
 import { S } from './state.js';
 import { busNetwork, chunks, dirtyChunks, isRoad, refreshTile, setBusNetwork } from './world.js';
+import { showRankUp } from './panels.js';
 import { checkTutorial, hourlyNews, setSpeed, showElection } from './ui.js';
-import { congestion, fireTick, roadCache } from './life.js';
+import { congestion, fireTick, roadCache, roadLoad } from './life.js';
 
 /* ---------------------------------------------------------------- simulation */
 const nearRoad = (x, z, r = 2) => {
@@ -45,6 +46,45 @@ function growthFactor(z) {
   }
   if (z === 'com' && law('silencio')) f *= 0.8;
   return f;
+}
+
+/* land value and pollution fields (one value per tile, recomputed with the stats) */
+// add a value that fades with distance around (x, z); mode 'max' keeps the strongest source instead
+function stamp(field, x, z, r, amount, max = false) {
+  const R = Math.ceil(r);
+  for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) {
+    const tx = x + dx, tz = z + dz, dist = Math.hypot(dx, dz);
+    if (!inside(tx, tz) || dist > r) continue;
+    const v = amount * (1 - dist / (r + 1)), i = I(tx, tz);
+    field[i] = max ? Math.max(field[i], v) : field[i] + v;
+  }
+}
+// static bonus for living near the river, computed once
+const RIVERSIDE = (() => {
+  const f = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) if (WATER[i]) stamp(f, i % N, (i / N) | 0, 4, 1, true);
+  for (let i = 0; i < N * N; i++) if (WATER[i]) f[i] = 0;
+  return f;
+})();
+const LAND_FOR_LEVEL = { res: [0, 0, 35, 55], com: [0, 0, 30, 50], off: [0, 0, 35, 50], ind: [0, 0, 0, 0] };
+function computeFields(d, polluters) {
+  const land = new Float32Array(N * N).fill(32), pol = new Float32Array(N * N);
+  const polFactor = (law('verde') ? 0.7 : 1) * (law('reciclaje') ? 0.6 : 1);
+  for (const [x, z, r, sv] of polluters) stamp(pol, x, z, r, sv * polFactor, true);
+  for (const [s, x, z] of d.svcList) {
+    const def = SERVICES[s];
+    if (s === 'park') stamp(land, x, z, 5, 18);
+    else if (def.leisure) stamp(land, x, z, Math.min(8, def.radius * 0.7), s === 'plaza' ? 12 : 14);
+    else if (def.radius) stamp(land, x, z, def.radius * 0.6, s === 'bus' ? 5 : 7);
+  }
+  for (let i = 0; i < N * N; i++) {
+    const T = S.tiles[i];
+    if (T.tree) stamp(land, i % N, (i / N) | 0, 2, 2.5);
+    if (T.t === 'zone' && T.z === 'com' && T.lv > 0 && !(T.build > 0)) stamp(land, i % N, (i / N) | 0, 3, 2);
+    if (T.t === 'road' && roadLoad[i] > (T.av ? 3 : 1.5)) stamp(land, i % N, (i / N) | 0, 1.5, -6);
+  }
+  for (let i = 0; i < N * N; i++) land[i] = WATER[i] ? 0 : clamp(land[i] + RIVERSIDE[i] * 14 - pol[i] * 45, 0, 100);
+  d.land = land; d.pol = pol;
 }
 
 let D = null; // derived stats, refreshed every game hour and after edits
@@ -94,13 +134,11 @@ function compute() {
   const hasBus = !!d.svc.bus;
   if (hasBus !== busNetwork) { setBusNetwork(hasBus); for (let c = 0; c < chunks.length; c++) dirtyChunks.add(c); }
   d.cov.leisure = covered(Object.keys(SERVICES).filter((k) => SERVICES[k].leisure));
-  let smoky = 0;
-  for (const [hx, hz, p] of homes) {
-    let w = 0;
-    for (const [px, pz, r, s] of polluters) if (Math.hypot(px - hx, pz - hz) <= r) w = Math.max(w, s);
-    smoky += p * w;
-  }
-  d.smoke = (d.pop ? smoky / d.pop : 0) * (law('verde') ? 0.7 : 1) * (law('reciclaje') ? 0.6 : 1);
+  computeFields(d, polluters);
+  let smoky = 0, landW = 0;
+  for (const [hx, hz, p] of homes) { smoky += p * Math.min(1.2, d.pol[I(hx, hz)]); landW += p * d.land[I(hx, hz)]; }
+  d.smoke = d.pop ? smoky / d.pop : 0;
+  d.landAvg = d.pop ? landW / d.pop : 0; // average land value where people live
   d.workers = d.pop * 0.55;
   d.employed = Math.min(d.workers, d.jobsTotal);
   d.filled = d.jobsTotal ? Math.min(1, d.workers / d.jobsTotal) : 0;
@@ -130,7 +168,7 @@ function compute() {
 function finances(d) {
   const tourismBase = d.svcList.reduce((a, [s]) => a + (SERVICES[s].tourism || 0), 0);
   const income = {
-    res: d.pop * S.taxes.res * 0.9 * (law('alquiler') ? 0.85 : 1),
+    res: d.pop * S.taxes.res * 0.9 * (0.7 + (d.landAvg || 40) / 100 * 0.6) * (law('alquiler') ? 0.85 : 1),
     com: d.jobs.com * d.filled * S.taxes.com * 1.2 * (law('empresas') ? 0.8 : 1) * (law('horarios') ? 1.15 : 1),
     off: d.jobs.off * d.filled * S.taxes.off * 1.5 * (law('empresas') ? 0.8 : 1),
     ind: d.jobs.ind * d.filled * S.taxes.ind * 1.1 * (law('empresas') ? 0.8 : 1),
@@ -233,6 +271,7 @@ function growth(d) {
       }
     } else if (T.lv < 3 && S.approval >= (T.lv === 2 ? 70 : 55)) {
       if (T.z === 'off' && d.pop < 300) continue;
+      if (d.land[i] < LAND_FOR_LEVEL[T.z][T.lv + 1]) continue; // nicer buildings need a nicer neighbourhood
       // businesses only grow when there is demand for all the jobs the bigger building adds
       if (T.z !== 'res' && demand[T.z] < ZONES[T.z].cap[T.lv + 1] - ZONES[T.z].cap[T.lv]) continue;
       const boost = T.z === 'res' && T.lv === 2 && law('educacion') ? 1.5 : 1;
@@ -256,6 +295,27 @@ function advanceConstruction() {
     else if (T.build % 2 === 0) refreshTile(i);
   });
 }
+// city rank from population; reaching a new one pays a reward and unlocks buildings
+function rankFor(pop) { let r = 0; RANKS.forEach(([p], k) => { if (pop >= p) r = k; }); return r; }
+function checkRank(d, silent = false) {
+  const r = rankFor(d.pop), from = S.rank ?? 0;
+  if (S.rank == null) { S.rank = r; return; } // older saves: grant the rank they already have
+  if (r <= from) return;
+  S.rank = r;
+  if (silent) return;
+  let reward = 0;
+  for (let k = from + 1; k <= r; k++) reward += RANK_REWARD[k];
+  S.money += reward;
+  showRankUp(r, reward, from);
+}
+const isLocked = (key) => (UNLOCK[key] || 0) > (S.rank ?? 0);
+// one sample per day for the statistics charts
+function sampleStats(d) {
+  S.stats.push({ day: S.day, pop: d.pop, money: Math.round(S.money), net: Math.round(d.fin.net), approval: Math.round(S.approval),
+    unemployment: d.workers ? Math.round((1 - d.employed / d.workers) * 100) : 0, land: Math.round(d.landAvg || 0), smoke: Math.round(d.smoke * 100), jam: Math.round(d.jam * 100) });
+  if (S.stats.length > 150) S.stats.shift();
+}
+
 function hourTick() {
   advanceConstruction();
   D = compute();
@@ -271,9 +331,11 @@ function hourTick() {
   }
   hourlyNews(D);
   checkTutorial(D);
+  checkRank(D);
 }
 
 function dayTick() {
+  if (D) sampleStats(D);
   S.day++;
   S.weather = Math.random() < 0.22 ? 'rain' : 'sun';
   if (S.day >= S.nextElection) return election();
@@ -301,4 +363,4 @@ function election() {
   showElection(result);
 }
 
-export { nearRoad, fundQ, law, party, radiusOf, upkeepOf, buildCost, growthFactor, D, refresh, compute, finances, approvalRows, voteShare, BUILD_HOURS, POWER_PER_LV, WATER_PER_LV, startBuilding, growth, advanceConstruction, hourTick, dayTick, election };
+export { nearRoad, fundQ, law, party, radiusOf, upkeepOf, buildCost, growthFactor, stamp, RIVERSIDE, LAND_FOR_LEVEL, computeFields, D, refresh, compute, finances, approvalRows, voteShare, BUILD_HOURS, POWER_PER_LV, WATER_PER_LV, startBuilding, growth, advanceConstruction, rankFor, checkRank, isLocked, sampleStats, hourTick, dayTick, election };

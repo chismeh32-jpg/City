@@ -37,7 +37,7 @@ function roadBuilder(x, z) {
     if (dx) b.box(dx * 0.45, y, 0, 0.1, 0.045, 1, 0xd5cfc2);
     else b.box(0, y, dz * 0.45, 1, 0.045, 0.1, 0xd5cfc2);
   });
-  const ty = y + 0.026;
+  const ty = y + 0.026, avenueStraight = !!S.tiles[I(x, z)].av && deg === 2 && conn[0] === conn[2];
   if (deg >= 3) {
     DIRS.forEach(([dx, dz], k) => {
       if (!conn[k]) return;
@@ -46,6 +46,14 @@ function roadBuilder(x, z) {
         else b.box(dx * 0.36, ty, s, 0.14, 0.004, 0.06, 0xf2efe6);
       }
     });
+  } else if (avenueStraight) {
+    // avenue: planted median and dashed lane lines on both carriageways
+    const az = conn[0];
+    b.box(0, ty - 0.005, 0, az ? 0.1 : 1, 0.035, az ? 1 : 0.1, 0xd5cfc2).box(0, ty + 0.03, 0, az ? 0.08 : 1, 0.01, az ? 1 : 0.08, 0x8cbf62);
+    for (const side of [-1, 1]) for (const t of [-0.32, 0, 0.32]) {
+      if (az) b.box(side * 0.25, ty, t, 0.02, 0.004, 0.13, 0xf2efe6);
+      else b.box(t, ty, side * 0.25, 0.13, 0.004, 0.02, 0xf2efe6);
+    }
   } else {
     DIRS.forEach(([dx, dz], k) => {
       if (!conn[k]) return;
@@ -64,8 +72,14 @@ function roadBuilder(x, z) {
       b.box(px, 0, pz, 0.025, 0.5, 0.025, 0x3b3f46).box(px, 0.5, pz, 0.07, 0.035, 0.07, 0xfff2c4, 1);
     }
   }
+  // trees on the avenue median
+  if (avenueStraight && !bridge) {
+    const props = new Builder(), r = rng(I(x, z) * 23 + 1);
+    props.tree(0, 0, 0.55 + r() * 0.15, pick(r, [0x6c9c4c, 0x5d8f45, 0x7fa955]));
+    b.props = props;
+  }
   // street furniture that casts shadows: parked cars and pavement trees on straight streets
-  if (!bridge && deg === 2 && conn[0] === conn[2] && stop < 0) {
+  else if (!bridge && deg === 2 && conn[0] === conn[2] && stop < 0) {
     const props = new Builder(), r = rng(I(x, z) * 17 + 3), alongZ = conn[0];
     for (const side of [-1, 1]) {
       const along = (r() - 0.5) * 0.5;
@@ -168,12 +182,15 @@ scene.add(cursor);
 const smokeEmitters = { list: [], dirty: true }; // chimney tops, rebuilt when chunks change
 
 /* ---------------------------------------------------------------- tile objects, batched into chunks */
-// Static tiles are merged per CH×CH chunk to keep draw calls low. A building that is
-// still playing its "grow" animation lives in its own group until the animation ends.
+// Static tiles are merged per CH×CH chunk to keep draw calls low. Buildings that finish in the same
+// frame and chunk share one "grow" animation group, so even a burst of completions costs at most
+// one extra draw call per chunk; when the animation ends they are merged back into their chunk.
 const CH = 8, NC = Math.ceil(N / CH);
 const chunks = Array.from({ length: NC * NC }, () => ({ group: null, smoke: [] }));
 const dirtyChunks = new Set();
-const animating = new Map(); // tile index -> group
+const animating = new Map(); // tile index -> grow batch it belongs to
+const growBatches = new Set(); // { group, tiles, grow }
+const pendingGrow = new Set(); // tiles that start growing on the next frame
 const chunkOf = (i) => Math.floor((i / N | 0) / CH) * NC + Math.floor((i % N) / CH);
 
 function facing(x, z) {
@@ -205,7 +222,7 @@ function buildChunk(c) {
   const ch = chunks[c], cx = c % NC, cz = (c / NC) | 0, bld = new Builder(), road = new Builder();
   for (let z = cz * CH; z < Math.min(N, cz * CH + CH); z++) for (let x = cx * CH; x < Math.min(N, cx * CH + CH); x++) {
     const i = I(x, z);
-    if (animating.has(i)) continue;
+    if (animating.has(i) || pendingGrow.has(i)) continue;
     const b = tileBuilder(i);
     if (!b) continue;
     (S.tiles[i].t === 'road' ? road : bld).merge(b, tileMatrix(i));
@@ -234,17 +251,9 @@ function refreshTile(i, animate = false) {
     scene.add(holder);
     rotors.set(i, holder);
   }
-  if (animating.has(i)) { disposeGroup(animating.get(i)); animating.delete(i); }
-  if (animate && T.t !== 'road') {
-    const b = tileBuilder(i);
-    if (b) {
-      const g = new Builder().merge(b, tileMatrix(i)).build(true);
-      g.scale.set(1, 0.01, 1);
-      g.userData.grow = 0;
-      scene.add(g);
-      animating.set(i, g);
-    }
-  }
+  if (animating.has(i)) finishBatch(animating.get(i));
+  pendingGrow.delete(i);
+  if (animate && T.t !== 'road' && (T.t === 'svc' || T.lv > 0)) pendingGrow.add(i);
   dirtyChunks.add(chunkOf(i));
   setTrees(i, T.tree && !T.t);
   setOverlay(i, T.t === 'zone' && T.lv === 0 && !T.ruin ? ZONES[T.z].color : null);
@@ -254,10 +263,54 @@ function refreshAround(i) {
   refreshTile(i);
   for (const [dx, dz] of DIRS) if (inside(x + dx, z + dz) && S.tiles[I(x + dx, z + dz)].t) refreshTile(I(x + dx, z + dz));
 }
+// end a grow animation now: its tiles go back into their chunks
+function finishBatch(batch) {
+  disposeGroup(batch.group);
+  growBatches.delete(batch);
+  for (const i of batch.tiles) { animating.delete(i); dirtyChunks.add(chunkOf(i)); }
+}
+// start one grow animation per chunk for the tiles that finished this frame
+function startGrowBatches() {
+  if (!pendingGrow.size) return;
+  const byChunk = new Map();
+  for (const i of pendingGrow) {
+    if (!byChunk.has(chunkOf(i))) byChunk.set(chunkOf(i), []);
+    byChunk.get(chunkOf(i)).push(i);
+  }
+  pendingGrow.clear();
+  for (const tiles of byChunk.values()) {
+    const b = new Builder();
+    for (const i of tiles) { const t = tileBuilder(i); if (t) b.merge(t, tileMatrix(i)); }
+    const group = b.build(true);
+    group.scale.set(1, 0.01, 1);
+    scene.add(group);
+    const batch = { group, tiles, grow: 0 };
+    growBatches.add(batch);
+    for (const i of tiles) animating.set(i, batch);
+  }
+}
+function updateGrowth(dt) {
+  startGrowBatches();
+  for (const batch of growBatches) {
+    batch.grow = Math.min(1, batch.grow + dt * 2.2);
+    const t = batch.grow, ease = 1 - Math.pow(1 - t, 3);
+    batch.group.scale.set(1, Math.max(0.01, ease * (1 + Math.sin(t * Math.PI) * 0.12)), 1);
+    if (t >= 1) finishBatch(batch);
+  }
+}
+// rebuild dirty chunks within a small time budget per frame (always at least one)
+function rebuildDirtyChunks(budgetMs = 6) {
+  const t0 = performance.now();
+  for (const c of dirtyChunks) {
+    dirtyChunks.delete(c);
+    buildChunk(c);
+    if (performance.now() - t0 > budgetMs) break;
+  }
+}
 function rebuildAll() {
-  for (const g of animating.values()) disposeGroup(g);
-  animating.clear();
+  for (const batch of [...growBatches]) finishBatch(batch);
+  pendingGrow.clear();
   for (let i = 0; i < N * N; i++) refreshTile(i);
 }
 
-export { slotOn, slotCone, slotMatrix, slotColor, isRoad, busNetwork, setBusNetwork, busStopSide, isBusStop, roadBuilder, PARKED, TREE_SLOTS, DECOR, TREE_CAP, trunkMesh, crownMat, roundMesh, coneMesh, ZERO, GREENS, AUTUMN, BLOSSOM, treeSlot, setTrees, treesDirty, overlay, setOverlay, overlayDirty, flushInstances, cursor, smokeEmitters, CH, NC, chunks, dirtyChunks, animating, chunkOf, facing, tileBuilder, tileMatrix, disposeGroup, buildChunk, rotors, refreshTile, refreshAround, rebuildAll };
+export { isRoad, busNetwork, setBusNetwork, busStopSide, isBusStop, roadBuilder, PARKED, TREE_SLOTS, DECOR, TREE_CAP, trunkMesh, crownMat, roundMesh, coneMesh, ZERO, slotOn, slotCone, slotMatrix, slotColor, GREENS, AUTUMN, BLOSSOM, treeSlot, setTrees, treesDirty, overlay, setOverlay, overlayDirty, flushInstances, cursor, smokeEmitters, CH, NC, chunks, dirtyChunks, animating, growBatches, pendingGrow, chunkOf, facing, tileBuilder, tileMatrix, disposeGroup, buildChunk, rotors, refreshTile, refreshAround, finishBatch, startGrowBatches, updateGrowth, rebuildDirtyChunks, rebuildAll };

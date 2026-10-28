@@ -4,8 +4,10 @@ import { glowMat } from './buildings.js';
 import { LAWS, MIN_PER_SEC, clamp, news } from './config.js';
 import { S, save } from './state.js';
 import { SKY_DAY, SKY_DUSK, SKY_NIGHT, SKY_RAIN, TOP_DAY, TOP_DUSK, TOP_NIGHT, TOP_RAIN, applyGfx, bloom, camera, controls, gfx, hemi, renderFrame, renderer, scene, sky, sun, updateClouds, watchPerformance, waterMat } from './scene.js';
-import { animating, buildChunk, chunkOf, dirtyChunks, disposeGroup, flushInstances, rebuildAll, rotors } from './world.js';
-import { D, dayTick, election, hourTick, refresh } from './sim.js';
+import { flushInstances, rebuildAll, rebuildDirtyChunks, rotors, updateGrowth } from './world.js';
+import { D, checkRank, dayTick, election, hourTick, refresh } from './sim.js';
+import { updateAudio } from './audio.js';
+import { updateLayer } from './layers.js';
 import { apply, openModal, pathTiles, placeTicker, renderAdvisor, selectTool, setSpeed, tool, updateHud } from './ui.js';
 import { agents, fireCovered, startFire, updateBirds, updateBoats, updateFires, updatePeople, updateRain, updateSmoke, updateTraffic } from './life.js';
 
@@ -36,6 +38,7 @@ function updateLighting() {
   w.uSky.value.copy(tmpSky);
   w.uSun.value.copy(sun.position).normalize();
   scene.fog.near = 75; scene.fog.far = 170;
+  return day;
 }
 
 /* ---------------------------------------------------------------- main loop */
@@ -50,13 +53,8 @@ function frame() {
     const after = Math.floor(S.minutes / 60);
     if (after !== before) hourTick();
   }
-  for (const [i, g] of animating) {
-    g.userData.grow = Math.min(1, g.userData.grow + dt * 2.2);
-    const t = g.userData.grow, ease = 1 - Math.pow(1 - t, 3);
-    g.scale.set(1, Math.max(0.01, ease * (1 + Math.sin(t * Math.PI) * 0.12)), 1);
-    if (t >= 1) { disposeGroup(g); animating.delete(i); dirtyChunks.add(chunkOf(i)); }
-  }
-  for (const c of [...dirtyChunks].slice(0, dirtyChunks.size > 6 ? dirtyChunks.size : 3)) { dirtyChunks.delete(c); buildChunk(c); }
+  updateGrowth(dt);
+  rebuildDirtyChunks();
   updateTraffic(dt);
   updatePeople(dt);
   updateBoats(dt);
@@ -65,14 +63,20 @@ function frame() {
   updateSmoke(dt);
   updateFires(dt);
   updateRain(dt);
-  updateLighting();
+  const day = updateLighting();
   flushInstances();
   updateClouds(dt);
   controls.update();
   renderFrame();
   watchPerformance(dt);
   hudTimer += dt; saveTimer += dt;
-  if (hudTimer > 0.25) { hudTimer = 0; updateHud(); }
+  updateLayer(dt);
+  if (hudTimer > 0.25) {
+    hudTimer = 0;
+    updateHud();
+    const dist = camera.position.distanceTo(controls.target);
+    updateAudio({ day, rain: S.weather === 'rain', traffic: agents.length, closeness: clamp(1 - (dist - 7) / 60, 0, 1), green: D?.cov?.park || 0 });
+  }
   if (saveTimer > 15) { saveTimer = 0; save(); }
   requestAnimationFrame(frame);
 }
@@ -87,7 +91,9 @@ addEventListener('beforeunload', save);
 
 /* ---------------------------------------------------------------- boot */
 rebuildAll();
+rebuildDirtyChunks(Infinity); // the whole map appears at once on load
 refresh();
+checkRank(D, true);
 setSpeed(S.speed ?? 1);
 selectTool('look');
 renderAdvisor();
@@ -95,5 +101,5 @@ updateHud();
 placeTicker();
 news(D.pop ? `Bienvenido de nuevo a ${S.name}.` : 'Bienvenida, alcaldía. Empieza trazando una calle junto al río.');
 if (!S.party) openModal('partyModal');
-window.__urbania = { renderer, scene, election, LAWS, agents, startFire, fireCovered, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, setSpeed };
+window.__urbania = { renderer, scene, camera, controls, election, LAWS, agents, startFire, fireCovered, get state() { return S; }, get stats() { return D; }, apply: (id, a, b) => { selectTool(id); apply(pathTiles(a, b, tool.mode)); }, hourTick, dayTick, setSpeed };
 frame();

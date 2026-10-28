@@ -38,16 +38,18 @@
       ["park", "Parque", "Radio de 5 casillas · 60 € al día"], ["plaza", "Plaza mayor", "Ocio · radio de 6 · turismo"],
       ["zoo", "Zoológico", "Ocio · radio de 11 · mucho turismo"], ["stadium", "Estadio", "Ocio · radio de 12 · el que más turistas atrae"],
       ["museum", "Museo", "Ocio · radio de 10 · turismo"],
-      ["power", "Central de gas", "140 ⚡ · contamina poco · 500 € al día"], ["coal", "Central de carbón", "240 ⚡ · contamina mucho · 350 € al día"],
-      ["solar", "Parque solar", "60 ⚡ · limpia · 150 € al día"], ["wind", "Aerogenerador", "50 ⚡ · limpia · 120 € al día"],
-      ["water", "Torre de agua", "140 💧 · 300 € al día"],
+      ["power", "Central de gas", "140 de luz · contamina poco · 500 € al día"], ["coal", "Central de carbón", "240 de luz · contamina mucho · 350 € al día"],
+      ["solar", "Parque solar", "60 de luz · limpia · 150 € al día"], ["wind", "Aerogenerador", "50 de luz · limpia · 120 € al día"],
+      ["water", "Torre de agua", "140 de agua · 300 € al día"],
     ];
+    // buildings that unlock as the town grows (same thresholds as the game)
+    const UNLOCK = { plaza: "Pueblo", cityhall: "Pueblo", bus: "Pueblo", solar: "Pueblo", off: "Villa", museum: "Villa", wind: "Villa", zoo: "Ciudad", stadium: "Gran ciudad" };
     const items = [];
     for (const [z, Z] of Object.entries(ZONES))
       for (let lv = 1; lv <= 3; lv++)
         for (let k = 0; k < 4; k++)
-          items.push({ cat: Z.label, color: Z.color, name: Z.names[lv - 1], img: `assets/img/catalog/${z}-${lv}-${k}.jpg`, info: `Nivel ${lv} · ${Z.cap[lv - 1]} ${Z.unit}` });
-    for (const [id, name, info] of SERVICES) items.push({ cat: "Servicios", color: "#e4553b", name, img: `assets/img/catalog/svc-${id}.jpg`, info });
+          items.push({ cat: Z.label, color: Z.color, name: Z.names[lv - 1], img: `assets/img/catalog/${z}-${lv}-${k}.jpg`, info: `Nivel ${lv} · ${Z.cap[lv - 1]} ${Z.unit}${UNLOCK[z] ? ` · desde ${UNLOCK[z].toLowerCase()}` : ""}` });
+    for (const [id, name, info] of SERVICES) items.push({ cat: "Servicios", color: "#e4553b", name, img: `assets/img/catalog/svc-${id}.jpg`, info: UNLOCK[id] ? `${info} · desde ${UNLOCK[id].toLowerCase()}` : info });
 
     const list = document.getElementById("items"), search = document.querySelector(".search"),
           count = document.querySelector(".count"), chips = document.getElementById("chips");

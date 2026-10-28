@@ -93,7 +93,10 @@ const ELECTION_EVERY = 10;
 
 const CATEGORIES = [
   { id: 'look', label: 'Mirar', icon: '🖐️', ico: 'hand', tools: [{ id: 'look' }] },
-  { id: 'roads', label: 'Calles', icon: '🛣️', ico: 'road', tools: [{ id: 'road', label: 'Calle', icon: '🛣️', ico: 'road', mode: 'line', cost: 25, hint: 'Arrastra para trazar. Sobre el río se hace un puente (100 €).' }] },
+  { id: 'roads', label: 'Calles', icon: '🛣️', ico: 'road', tools: [
+    { id: 'road', label: 'Calle', icon: '🛣️', ico: 'road', mode: 'line', cost: 25, hint: 'Arrastra para trazar. Sobre el río se hace un puente (100 €).' },
+    { id: 'avenue', label: 'Avenida', icon: '🛣️', ico: 'avenue', mode: 'line', cost: 60, hint: 'Dos carriles por sentido y una mediana con árboles: aguanta el doble de tráfico. Pásala por encima de una calle para mejorarla (40 €).' },
+  ] },
   { id: 'util', label: 'Energía y agua', icon: '⚡', ico: 'bolt', tools: ['power', 'coal', 'solar', 'wind', 'water'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
   { id: 'zones', label: 'Zonas', icon: '▦', ico: 'zones', tools: Object.keys(ZONES).map((z) => ({ id: z, zone: z, mode: 'rect', cost: 10, hint: 'Arrastra para marcar. Los edificios crecen solos si hay calle, luz y agua.' })) },
   { id: 'services', label: 'Servicios', icon: '🏛️', ico: 'columns', tools: ['police', 'fire', 'health', 'school', 'bus', 'cityhall'].map((s) => ({ id: s, svc: s, mode: 'one' })) },
@@ -107,6 +110,11 @@ for (const c of CATEGORIES) for (const t of c.tools) {
 
 // line icon from the SVG sprite in jugar.html
 const ic = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+// city ranks by population: each one pays a reward and unlocks new buildings
+const RANKS = [[0, 'Aldea'], [100, 'Pueblo'], [300, 'Villa'], [700, 'Ciudad'], [1500, 'Gran ciudad'], [3000, 'Metrópolis']];
+const RANK_REWARD = [0, 5000, 10000, 20000, 40000, 80000];
+const UNLOCK = { plaza: 1, cityhall: 1, bus: 1, solar: 1, off: 2, museum: 2, wind: 2, avenue: 2, zoo: 3, stadium: 4 };
 
 const NEIGHBOURS = ['Peñaclara', 'Robledal', 'Villarrío', 'San Fermín del Llano', 'Los Almendros', 'Fuentehonda'];
 const NAMES = ['Lucía', 'Don Miguel', 'Carmen', 'Javi', 'Rosa', 'Andrés', 'Marta', 'Paco', 'Inés', 'Tomás', 'Aitana', 'Doña Pilar', 'Rubén', 'Nerea', 'Óscar', 'Elena'];
@@ -129,4 +137,4 @@ function initialTree(i) {
   return hash(i, 3) < (centre ? 0.01 : 0.05);
 }
 
-export { N, HALF, SAVE_KEY, MIN_PER_SEC, $, fmt, money, signed, clamp, I, inside, W, DIRS, el, news, _m, _q, _e, _v, _s, _c, hash, ZONES, SERVICES, FUNDS, PARTIES, LAWS, LAW_BY_ID, LAW_FEE, ELECTION_EVERY, CATEGORIES, ic, NEIGHBOURS, NAMES, riverZ, RIVER_W, WATER, forestNoise, initialTree };
+export { N, HALF, SAVE_KEY, MIN_PER_SEC, $, fmt, money, signed, clamp, I, inside, W, DIRS, el, news, _m, _q, _e, _v, _s, _c, hash, ZONES, SERVICES, FUNDS, PARTIES, LAWS, LAW_BY_ID, LAW_FEE, ELECTION_EVERY, CATEGORIES, ic, RANKS, RANK_REWARD, UNLOCK, NEIGHBOURS, NAMES, riverZ, RIVER_W, WATER, forestNoise, initialTree };
