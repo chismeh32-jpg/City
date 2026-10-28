@@ -31,13 +31,22 @@ export function setStyle(id) { STYLE = STYLES[id] || STYLES.clasico; }
 export const bodyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, flatShading: true });
 export const glowMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, emissive: 0xffc977, emissiveIntensity: 0 });
 
+// drop the downward-facing face of a non-indexed box (vertices 18–23): ~17 % fewer triangles in every building
+function withoutBottom(g) {
+  for (const k of Object.keys(g.attributes)) {
+    const a = g.attributes[k], keep = [];
+    for (let v = 0; v < a.count; v++) if (v < 18 || v >= 24) for (let c = 0; c < a.itemSize; c++) keep.push(a.array[v * a.itemSize + c]);
+    g.setAttribute(k, new THREE.Float32BufferAttribute(keep, a.itemSize));
+  }
+  return g;
+}
 export function prep(g) {
   if (g.index) g = g.toNonIndexed();
   for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k);
   return g;
 }
 export const GEO = {
-  box: prep(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)),
+  box: withoutBottom(prep(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0))), // the underside is never seen from the camera
   cyl: prep(new THREE.CylinderGeometry(0.5, 0.5, 1, 10).translate(0, 0.5, 0)),
   cyl6: prep(new THREE.CylinderGeometry(0.5, 0.5, 1, 6).translate(0, 0.5, 0)),
   pyramid: prep(new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0)),
